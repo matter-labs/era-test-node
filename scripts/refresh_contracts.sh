@@ -2,7 +2,9 @@
 set -xe
 
 SRC_DIR=etc/system-contracts/artifacts-zk/cache-zk/solpp-generated-contracts
-DST_DIR=src/deps/contracts
+DST_DIR=src/deps/contracts/
+
+mkdir -p $DST_DIR
 
 contracts=("AccountCodeStorage" "BootloaderUtilities" "BytecodeCompressor" "Console" "ContractDeployer" "DefaultAccount" "EmptyContract" "ImmutableSimulator" "KnownCodesStorage" "L1Messenger" "L2EthToken" "MsgValueSimulator" "NonceHolder" "SystemContext" )
 
