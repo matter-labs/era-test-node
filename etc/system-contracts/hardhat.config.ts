@@ -1,5 +1,5 @@
 import '@nomiclabs/hardhat-solpp';
-import 'hardhat-typechain';
+import '@typechain/hardhat'
 import '@nomiclabs/hardhat-ethers';
 import '@matterlabs/hardhat-zksync-solc';
 
