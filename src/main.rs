@@ -99,9 +99,9 @@ struct Cli {
     show_calls: ShowCalls,
 
     #[arg(long)]
-    /// If true, the tool will not try to contact openchain to resolve the ABI & topic names.
-    /// It will make debug log less readable, but will increase the performance.
-    skip_resolve: bool,
+    /// If true, the tool will try to contact openchain to resolve the ABI & topic names.
+    /// It will make debug log more readable, but will decrease the performance.
+    resolve_hashes: bool,
 
     #[arg(long)]
     /// If true, will load the locally compiled system contracts (useful when doing changes to system contracts or bootloader)
@@ -124,10 +124,13 @@ impl Display for ShowCalls {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Starts a new empty local network.
     #[command(name = "run")]
     Run,
+    /// Starts a local network that is a fork of another network.
     #[command(name = "fork")]
     Fork(ForkArgs),
+    /// Starts a local network that is a fork of another network, and replays a given TX on it.
     #[command(name = "replay_tx")]
     ReplayTx(ReplayArgs),
 }
@@ -161,12 +164,14 @@ struct ReplayArgs {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    if env::var_os("ZKSYNC_HOME").is_some() {
-        panic!("Please remove ZKSYNC_HOME env variable (as this might cause the node to behave in unexpected ways).");
-    }
-
     let opt = Cli::parse();
     let filter = EnvFilter::from_default_env();
+
+    if opt.dev_use_local_contracts {
+        if let Some(path) = env::var_os("ZKSYNC_HOME") {
+            println!("+++++ Reading local contracts from {:?} +++++", path);
+        }
+    }
 
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::TRACE)
@@ -199,7 +204,7 @@ async fn main() -> anyhow::Result<()> {
     let node = InMemoryNode::new(
         fork_details,
         opt.show_calls,
-        opt.skip_resolve,
+        opt.resolve_hashes,
         opt.dev_use_local_contracts,
     );
 

@@ -32,13 +32,13 @@ Current features:
 To start a node:
 
 ```shell
-cargo run --release -p zksync_test_node run
+ksync_test_node run
 ```
 
 If you also want to see the logs printed by your contract (that uses console.log feature):
 
 ```shell
-RUST_LOG=console=trace cargo run --release -p zksync_test_node run
+RUST_LOG=console=trace zksync_test_node run
 ```
 
 This will run a node (with an empty state) and make it available on port 8011
@@ -46,7 +46,7 @@ This will run a node (with an empty state) and make it available on port 8011
 To fork mainnet:
 
 ```shell
-cargo run --release -p zksync_test_node fork mainnet
+zksync_test_node fork mainnet
 ```
 
 This will run the node, forked at current head of mainnet
@@ -54,7 +54,7 @@ This will run the node, forked at current head of mainnet
 You can also specify the custom http endpoint and custom forking height:
 
 ```shell
-cargo run --release -p zksync_test_node fork --fork-at 7000000 http://172.17.0.3:3060
+zksync_test_node fork --fork-at 7000000 http://172.17.0.3:3060
 ```
 
 ## Forking network & sending calls
@@ -64,21 +64,21 @@ You can use your favorite development tool (or tools like `curl`) or zksync-foun
 Check testnet LINK balance
 
 ```shell
-$ cargo run --release -p zksync_test_node fork testnet
+$ zksync_test_node fork testnet
 
 $ zkcast call 0x40609141Db628BeEE3BfAB8034Fc2D8278D0Cc78 "name()(string)" --rpc-url http://localhost:8011
 
 > ChainLink Token (goerli)
 
 
-$ $ zkcast call 0x40609141Db628BeEE3BfAB8034Fc2D8278D0Cc78 "balanceOf(address)(uint256)"  0x40609141Db628BeEE3BfAB8034Fc2D8278D0Cc78  --rpc-url http://localhost:8011
+$ zkcast call 0x40609141Db628BeEE3BfAB8034Fc2D8278D0Cc78 "balanceOf(address)(uint256)"  0x40609141Db628BeEE3BfAB8034Fc2D8278D0Cc78  --rpc-url http://localhost:8011
 > 28762283719732275444443116625665
 ```
 
 Or Mainnet USDT:
 
 ```shell
-cargo run -p zksync_test_node fork mainnet
+zksync_test_node fork mainnet
 
 zkcast call 0x493257fD37EDB34451f62EDf8D2a0C418852bA4C "name()(string)" --rpc-url http://localhost:8011
 
@@ -88,7 +88,7 @@ zkcast call 0x493257fD37EDB34451f62EDf8D2a0C418852bA4C "name()(string)" --rpc-ur
 And you can also build & deploy your own contracts:
 
 ```shell
-fzkforge zkc src/Greeter.sol:Greeter --constructor-args "ZkSync and Foundry" --private-key 7726827caac94a7f9e1b160f7ea819f172f7b6f9d2a97f992c38edeab82d4110 --rpc-url http://localhost:8011 --chain 270
+zkforge zkc src/Greeter.sol:Greeter --constructor-args "ZkSync and Foundry" --private-key 7726827caac94a7f9e1b160f7ea819f172f7b6f9d2a97f992c38edeab82d4110 --rpc-url http://localhost:8011 --chain 270
 
 ```
 
@@ -114,7 +114,7 @@ Imagine, that you have a testnet transaction, that you'd like to replay locally 
 information).
 
 ```shell
-cargo run --release -p zksync_test_node replay_tx testnet 0x7f039bcbb1490b855be37e74cf2400503ad57f51c84856362f99b0cbf1ef478a
+zksync_test_node replay_tx testnet 0x7f039bcbb1490b855be37e74cf2400503ad57f51c84856362f99b0cbf1ef478a
 ```
 
 ## Seeing more details of the transactions
@@ -124,7 +124,7 @@ By default, the tool is just printing the basic information about the executed t
 But with `--show-calls` flag, it can print more detailed call traces:
 
 ```shell
-$ cargo run  -p zksync_test_node -- --show-calls=user replay_tx testnet 0x7f039bcbb1490b855be37e74cf2400503ad57f51c84856362f99b0cbf1ef478a
+$ zksync_test_node --show-calls=user replay_tx testnet 0x7f039bcbb1490b855be37e74cf2400503ad57f51c84856362f99b0cbf1ef478a
 
 
 Executing 0x7f039bcbb1490b855be37e74cf2400503ad57f51c84856362f99b0cbf1ef478a

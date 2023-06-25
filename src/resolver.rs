@@ -14,8 +14,6 @@ use std::{
 use tokio::sync::RwLock;
 use tracing::warn;
 
-use crate::utils::read_file_to_json_value;
-
 static SELECTOR_DATABASE_URL: &str = "https://sig.eth.samczsun.com/api/v1/signatures";
 
 /// The standard request timeout for API requests
@@ -44,7 +42,7 @@ pub struct KnownAbi {
 
 lazy_static! {
     static ref KNOWN_SIGNATURES: HashMap<String, String> = {
-        let json_value = read_file_to_json_value("data/abi_map.json");
+        let json_value = serde_json::from_slice(include_bytes!("data/abi_map.json")).unwrap();
         let pairs: Vec<KnownAbi> = serde_json::from_value(json_value).unwrap();
 
         pairs

@@ -1,5 +1,5 @@
 //! Helper methods to display transaction data in more human readable way.
-use crate::{resolver, utils::read_file_to_json_value, ShowCalls};
+use crate::{resolver, ShowCalls};
 
 use colored::Colorize;
 use serde::Deserialize;
@@ -30,7 +30,7 @@ pub struct KnownAddress {
 lazy_static! {
     /// Loads the known contact addresses from the JSON file.
     static ref KNOWN_ADDRESSES: HashMap<H160, KnownAddress> = {
-        let json_value = read_file_to_json_value("data/address_map.json");
+        let json_value = serde_json::from_slice(include_bytes!("data/address_map.json")).unwrap();
         let pairs: Vec<KnownAddress> = serde_json::from_value(json_value).unwrap();
 
         pairs
@@ -53,11 +53,11 @@ fn address_to_human_readable(address: H160) -> Option<String> {
 
 /// Pretty-prints event object
 /// if skip_resolve is false, will try to contact openchain to resolve the topic hashes.
-pub fn print_event(event: &VmEvent, skip_resolve: bool) {
+pub fn print_event(event: &VmEvent, resolve_hashes: bool) {
     let event = event.clone();
     block_on(async move {
         let mut tt: Vec<String> = vec![];
-        if skip_resolve {
+        if !resolve_hashes {
             tt = event.indexed_topics.iter().map(|t| t.to_string()).collect();
         } else {
             for topic in event.indexed_topics {
@@ -83,7 +83,7 @@ pub fn print_event(event: &VmEvent, skip_resolve: bool) {
 
 /// Pretty-prints contents of a 'call' - including subcalls.
 /// If skip_resolve is false, will try to contact openchain to resolve the ABI names.
-pub fn print_call(call: &Call, padding: usize, show_calls: &ShowCalls, skip_resolve: bool) {
+pub fn print_call(call: &Call, padding: usize, show_calls: &ShowCalls, resolve_hashes: bool) {
     let contract_type = KNOWN_ADDRESSES
         .get(&call.to)
         .cloned()
@@ -109,7 +109,7 @@ pub fn print_call(call: &Call, padding: usize, show_calls: &ShowCalls, skip_reso
                 .collect::<Vec<_>>()
                 .join("");
 
-            if contract_type == ContractType::Precompile || skip_resolve {
+            if contract_type == ContractType::Precompile || !resolve_hashes {
                 sig
             } else {
                 block_on(async move {
@@ -149,6 +149,6 @@ pub fn print_call(call: &Call, padding: usize, show_calls: &ShowCalls, skip_reso
         );
     }
     for subcall in &call.calls {
-        print_call(subcall, padding + 2, show_calls, skip_resolve);
+        print_call(subcall, padding + 2, show_calls, resolve_hashes);
     }
 }

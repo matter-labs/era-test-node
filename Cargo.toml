@@ -11,19 +11,6 @@ categories = ["cryptography"]
 publish = false # We don't want to publish our binaries.
 
 [dependencies]
-
-#zksync_core = { path = "../zksync_core", version = "1.0" }
-#zksync_basic_types = { path = "../../lib/basic_types", version = "1.0" }
-#vlog = { path = "../../lib/vlog", version = "1.0" }
-#vm = {path = "../../lib/vm", version = "0.1.0"}
-#ksync_contracts = { path = "../../lib/contracts" }
-#zksync_types = { path = "../../lib/types", version = "1.0" }
-#zksync_utils = { path = "../../lib/utils", version = "1.0" }
-#zksync_state = {path = "../../lib/state", version = "1.0" }
-# zksync_web3_decl = { path = "../../lib/web3_decl", version = "1.0", default-features = false, features = [
-#    "server", "client"
-# ] }
-
 zksync_basic_types = { git = "https://github.com/matter-labs/zksync-era.git", rev = "6c91b1a6aec0552f7a5a6a78d6ddac07d43aa4bc" }
 zksync_core = { git = "https://github.com/matter-labs/zksync-era.git", rev = "6c91b1a6aec0552f7a5a6a78d6ddac07d43aa4bc" }
 vm = { git = "https://github.com/matter-labs/zksync-era.git", rev = "6c91b1a6aec0552f7a5a6a78d6ddac07d43aa4bc" }

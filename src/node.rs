@@ -87,8 +87,8 @@ pub struct InMemoryNodeInner {
     pub fork_storage: ForkStorage,
     // Debug level information.
     pub show_calls: ShowCalls,
-    // If true - will not contact openchain to resolve the ABI to function names.
-    pub skip_resolve: bool,
+    // If true - will contact openchain to resolve the ABI to function names.
+    pub resolve_hashes: bool,
     pub console_log_handler: ConsoleLogHandler,
     pub dev_use_local_contracts: bool,
     pub baseline_contracts: BaseSystemContracts,
@@ -190,7 +190,7 @@ impl InMemoryNode {
     pub fn new(
         fork: Option<ForkDetails>,
         show_calls: ShowCalls,
-        skip_resolve: bool,
+        resolve_hashes: bool,
         dev_use_local_contracts: bool,
     ) -> Self {
         InMemoryNode {
@@ -209,7 +209,7 @@ impl InMemoryNode {
                 blocks: Default::default(),
                 fork_storage: ForkStorage::new(fork, dev_use_local_contracts),
                 show_calls,
-                skip_resolve,
+                resolve_hashes,
                 console_log_handler: ConsoleLogHandler::default(),
                 dev_use_local_contracts,
                 playground_contracts: playground(dev_use_local_contracts),
@@ -288,7 +288,7 @@ impl InMemoryNode {
 
             println!("=== Call traces:");
             for call in call_trace {
-                formatter::print_call(call, 0, &inner.show_calls, inner.skip_resolve);
+                formatter::print_call(call, 0, &inner.show_calls, inner.resolve_hashes);
             }
         }
 
@@ -383,7 +383,7 @@ impl InMemoryNode {
 
         if inner.show_calls != ShowCalls::None {
             for call in &tx_result.call_traces {
-                formatter::print_call(call, 0, &inner.show_calls, inner.skip_resolve);
+                formatter::print_call(call, 0, &inner.show_calls, inner.resolve_hashes);
             }
         }
 
@@ -392,7 +392,7 @@ impl InMemoryNode {
             format!("{} events", tx_result.result.logs.events.len()).bold()
         );
         for event in &tx_result.result.logs.events {
-            formatter::print_event(event, inner.skip_resolve);
+            formatter::print_event(event, inner.resolve_hashes);
         }
 
         println!("\n\n");
@@ -412,7 +412,7 @@ impl InMemoryNode {
     /// Runs L2 transaction and commits it to a new block.
     fn run_l2_tx(&self, l2_tx: L2Tx, execution_mode: TxExecutionMode) {
         let tx_hash = l2_tx.hash();
-        println!("\nExecuting {:?}", tx_hash);
+        println!("\nExecuting {}", format!("{:?}", tx_hash).bold());
 
         let (keys, result, block, bytecodes) = self.run_l2_tx_inner(l2_tx.clone(), execution_mode);
 
