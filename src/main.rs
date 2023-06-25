@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 use fork::ForkDetails;
 use zks::ZkMockNamespaceImpl;
 
+mod console_log;
 mod deps;
 mod fork;
 mod formatter;

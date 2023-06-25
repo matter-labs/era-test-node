@@ -1,5 +1,6 @@
 //! In-memory node, that supports forking other networks.
 use crate::{
+    console_log::ConsoleLogHandler,
     deps::ReadStorage,
     fork::{ForkDetails, ForkStorage},
     formatter, ShowCalls,
@@ -89,6 +90,7 @@ pub struct InMemoryNodeInner {
     pub show_calls: ShowCalls,
     // If true - will not contact openchain to resolve the ABI to function names.
     pub skip_resolve: bool,
+    pub console_log_handler: ConsoleLogHandler,
 }
 
 impl InMemoryNodeInner {
@@ -180,6 +182,7 @@ impl InMemoryNode {
                 fork_storage: ForkStorage::new(fork),
                 show_calls,
                 skip_resolve,
+                console_log_handler: ConsoleLogHandler::default(),
             })),
         }
     }
@@ -247,6 +250,12 @@ impl InMemoryNode {
             println!("Call {}", "SUCCESS".green());
         }
         if let VmTrace::CallTrace(call_trace) = &vm_block_result.full_result.trace {
+            println!("=== Console Logs: ");
+            for call in call_trace {
+                inner.console_log_handler.handle_call_recurive(call);
+            }
+
+            println!("=== Call traces:");
             for call in call_trace {
                 formatter::print_call(call, 0, &inner.show_calls, inner.skip_resolve);
             }
@@ -336,6 +345,11 @@ impl InMemoryNode {
             tx.gas_limit() - tx_result.gas_refunded,
             tx_result.gas_refunded
         );
+        println!("\n==== Console logs: ");
+
+        for call in &tx_result.call_traces {
+            inner.console_log_handler.handle_call_recurive(call);
+        }
 
         println!(
             "\n==== {} Use --show-calls flag to display more info.",

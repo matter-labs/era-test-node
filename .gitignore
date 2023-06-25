@@ -8,3 +8,4 @@ etc/system-contracts/.yarnrc.yml
 etc/system-contracts/bootloader/build
 
 *.zbin
+.vscode/

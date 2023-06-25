@@ -19,10 +19,13 @@ Current limitations:
 Current features:
 
 - Can fork the state of the mainnet, testnet, or a custom network at any given height.
+- Can replay the existing mainnet, testnet transaaction.
 - Uses local bootloader and system contracts, making it suitable for testing new changes.
 - When running in non-fork mode, it operates deterministically (only one transaction per block, etc.), which simplifies
   testing.
 - Starts up quickly and comes pre-configured with a few 'rich' accounts.
+- Supports hardhat's console.log debugging.
+- Can resolve the names of ABI functions and Events (using openchain)
 
 ## How to
 
