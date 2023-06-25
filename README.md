@@ -27,6 +27,20 @@ Current features:
 - Supports hardhat's console.log debugging.
 - Can resolve the names of ABI functions and Events (using openchain)
 
+## Installation
+
+The easiest way is to install from source:
+```
+cargo install --git https://github.com/mm-zk/era-test-node.git
+```
+
+If you get compile errors due to rocksDB, you might also want to install:
+
+```
+apt-get install -y cmake pkg-config libssl-dev clang
+```
+
+
 ## How to
 
 To start a node:
