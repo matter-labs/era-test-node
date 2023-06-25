@@ -12,18 +12,20 @@ use std::{
 
 use zksync_basic_types::{L1BatchNumber, L2ChainId, MiniblockNumber, H256, U64};
 
-use zksync_state::{InMemoryStorage, ReadStorage};
 use zksync_types::{
     api::{BlockIdVariant, BlockNumber},
     l2::L2Tx,
-    StorageKey,
+    StorageKey, ZkSyncReadStorage,
 };
 use zksync_utils::{bytecode::hash_bytecode, h256_to_u256};
 
 use zksync_web3_decl::{jsonrpsee::http_client::HttpClient, namespaces::EthNamespaceClient};
 use zksync_web3_decl::{jsonrpsee::http_client::HttpClientBuilder, namespaces::ZksNamespaceClient};
 
-use crate::node::TEST_NODE_NETWORK_ID;
+use crate::{
+    deps::{InMemoryStorage, ReadStorage},
+    node::TEST_NODE_NETWORK_ID,
+};
 
 /// In memory storage, that allows 'forking' from other network.
 /// If forking is enabled, it reads missing data from remote location.
@@ -128,19 +130,50 @@ impl ForkStorage {
 
 impl ReadStorage for ForkStorage {
     fn is_write_initial(&mut self, key: &StorageKey) -> bool {
-        (&*self).is_write_initial(key)
+        let mut mutator = self.inner.write().unwrap();
+        mutator.raw_storage.is_write_initial(key)
     }
 
     fn load_factory_dep(&mut self, hash: H256) -> Option<Vec<u8>> {
-        (&*self).load_factory_dep(hash)
+        self.load_factory_dep_internal(hash)
     }
 
     fn read_value(&mut self, key: &StorageKey) -> zksync_types::StorageValue {
-        (&*self).read_value(key)
+        self.read_value_internal(key)
     }
 }
 
 impl ReadStorage for &ForkStorage {
+    fn read_value(&mut self, key: &StorageKey) -> zksync_types::StorageValue {
+        self.read_value_internal(key)
+    }
+
+    fn is_write_initial(&mut self, key: &StorageKey) -> bool {
+        let mut mutator = self.inner.write().unwrap();
+        mutator.raw_storage.is_write_initial(key)
+    }
+
+    fn load_factory_dep(&mut self, hash: H256) -> Option<Vec<u8>> {
+        self.load_factory_dep_internal(hash)
+    }
+}
+
+impl ZkSyncReadStorage for ForkStorage {
+    fn read_value(&mut self, key: &StorageKey) -> zksync_types::StorageValue {
+        self.read_value_internal(key)
+    }
+
+    fn is_write_initial(&mut self, key: &StorageKey) -> bool {
+        let mut mutator = self.inner.write().unwrap();
+        mutator.raw_storage.is_write_initial(key)
+    }
+
+    fn load_factory_dep(&mut self, hash: H256) -> Option<Vec<u8>> {
+        self.load_factory_dep_internal(hash)
+    }
+}
+
+impl ZkSyncReadStorage for &ForkStorage {
     fn read_value(&mut self, key: &StorageKey) -> zksync_types::StorageValue {
         self.read_value_internal(key)
     }

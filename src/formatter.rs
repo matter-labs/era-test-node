@@ -1,12 +1,11 @@
 //! Helper methods to display transaction data in more human readable way.
-use crate::{resolver, ShowCalls};
+use crate::{resolver, utils::read_file_to_json_value, ShowCalls};
 
 use colored::Colorize;
 use serde::Deserialize;
 use std::collections::HashMap;
 
 use zksync_basic_types::H160;
-use zksync_contracts::read_file_to_json_value;
 use zksync_core::block_on;
 
 use zksync_types::{vm_trace::Call, VmEvent};
@@ -31,7 +30,7 @@ pub struct KnownAddress {
 lazy_static! {
     /// Loads the known contact addresses from the JSON file.
     static ref KNOWN_ADDRESSES: HashMap<H160, KnownAddress> = {
-        let json_value = read_file_to_json_value("core/bin/test_node/data/address_map.json");
+        let json_value = read_file_to_json_value("data/address_map.json");
         let pairs: Vec<KnownAddress> = serde_json::from_value(json_value).unwrap();
 
         pairs
