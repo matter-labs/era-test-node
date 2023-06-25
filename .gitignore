@@ -1,2 +1,3 @@
 /target
 etc/system-contracts/.yarn
+etc/system-contracts/node_modules
