@@ -1,0 +1,26 @@
+[
+    [
+        "0x00000000",
+        "0x00000000"
+    ],
+    [
+        "0x319af333",
+        "log(string,address)"
+    ],
+    [
+        "0x41304fac",
+        "log(string)"
+    ],
+    [
+        "0x6ef25c3a",
+        "baseFee()"
+    ],
+    [
+        "0x9a8a0592",
+        "chainId()"
+    ],
+    [
+        "0xe516761e",
+        "markFactoryDeps(bool, bytes32[]"
+    ]
+]
