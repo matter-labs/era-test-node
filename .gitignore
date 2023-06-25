@@ -7,5 +7,5 @@ etc/system-contracts/typechain-types
 etc/system-contracts/.yarnrc.yml
 etc/system-contracts/bootloader/build
 
-*.zbin
+etc/**/*.zbin
 .vscode/
