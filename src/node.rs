@@ -1,13 +1,12 @@
 //! In-memory node, that supports forking other networks.
 use crate::{
     console_log::ConsoleLogHandler,
-    deps::ReadStorage,
+    deps::{system_contracts::bytecode_from_slice, ReadStorage},
     fork::{ForkDetails, ForkStorage},
     formatter, ShowCalls,
 };
 
 use colored::Colorize;
-use once_cell::sync::Lazy;
 use std::{
     collections::HashMap,
     convert::TryInto,
@@ -39,7 +38,7 @@ use zksync_utils::{
 };
 
 use vm::{
-    utils::{BASE_SYSTEM_CONTRACTS, BLOCK_GAS_LIMIT, ETH_CALL_GAS_LIMIT},
+    utils::{BLOCK_GAS_LIMIT, ETH_CALL_GAS_LIMIT},
     vm::VmTxExecutionResult,
     vm_with_bootloader::{
         init_vm_inner, push_transaction_to_bootloader_memory, BlockContext, BlockContextMode,
@@ -91,6 +90,9 @@ pub struct InMemoryNodeInner {
     // If true - will not contact openchain to resolve the ABI to function names.
     pub skip_resolve: bool,
     pub console_log_handler: ConsoleLogHandler,
+    pub dev_use_local_contracts: bool,
+    pub baseline_contracts: BaseSystemContracts,
+    pub playground_contracts: BaseSystemContracts,
 }
 
 impl InMemoryNodeInner {
@@ -103,9 +105,9 @@ impl InMemoryNodeInner {
             operator_address: H160::zero(),
         }
     }
-    fn create_block_properties() -> BlockProperties {
+    fn create_block_properties(contracts: &BaseSystemContracts) -> BlockProperties {
         BlockProperties {
-            default_aa_code_hash: h256_to_u256(BASE_SYSTEM_CONTRACTS.default_aa.hash),
+            default_aa_code_hash: h256_to_u256(contracts.default_aa.hash),
             zkporter_is_available: false,
         }
     }
@@ -122,7 +124,10 @@ pub struct InMemoryNode {
     inner: Arc<RwLock<InMemoryNodeInner>>,
 }
 
-fn bsc_load_with_bootloader(bootloader_bytecode: Vec<u8>) -> BaseSystemContracts {
+fn bsc_load_with_bootloader(
+    bootloader_bytecode: Vec<u8>,
+    use_local_contracts: bool,
+) -> BaseSystemContracts {
     let hash = hash_bytecode(&bootloader_bytecode);
 
     let bootloader = SystemContractCode {
@@ -130,7 +135,14 @@ fn bsc_load_with_bootloader(bootloader_bytecode: Vec<u8>) -> BaseSystemContracts
         hash,
     };
 
-    let bytecode = read_sys_contract_bytecode("", "DefaultAccount", ContractLanguage::Sol);
+    let bytecode = if use_local_contracts {
+        read_sys_contract_bytecode("", "DefaultAccount", ContractLanguage::Sol)
+    } else {
+        bytecode_from_slice(
+            "DefaultAccount",
+            include_bytes!("deps/contracts/DefaultAccount.json"),
+        )
+    };
     let hash = hash_bytecode(&bytecode);
 
     let default_aa = SystemContractCode {
@@ -145,12 +157,23 @@ fn bsc_load_with_bootloader(bootloader_bytecode: Vec<u8>) -> BaseSystemContracts
 }
 
 /// BaseSystemContracts with playground bootloader -  used for handling 'eth_calls'.
-pub fn playground() -> BaseSystemContracts {
-    let bootloader_bytecode = read_playground_block_bootloader_bytecode();
-    bsc_load_with_bootloader(bootloader_bytecode)
+pub fn playground(use_local_contracts: bool) -> BaseSystemContracts {
+    let bootloader_bytecode = if use_local_contracts {
+        read_playground_block_bootloader_bytecode()
+    } else {
+        include_bytes!("deps/contracts/playground_block.yul.zbin").to_vec()
+    };
+    bsc_load_with_bootloader(bootloader_bytecode, use_local_contracts)
 }
 
-pub static PLAYGROUND_SYSTEM_CONTRACTS: Lazy<BaseSystemContracts> = Lazy::new(playground);
+pub fn baseline_contracts(use_local_contracts: bool) -> BaseSystemContracts {
+    let bootloader_bytecode = if use_local_contracts {
+        read_playground_block_bootloader_bytecode()
+    } else {
+        include_bytes!("deps/contracts/proved_block.yul.zbin").to_vec()
+    };
+    bsc_load_with_bootloader(bootloader_bytecode, use_local_contracts)
+}
 
 fn contract_address_from_tx_result(execution_result: &VmTxExecutionResult) -> Option<H160> {
     for query in execution_result.result.logs.storage_logs.iter().rev() {
@@ -164,7 +187,12 @@ fn contract_address_from_tx_result(execution_result: &VmTxExecutionResult) -> Op
 }
 
 impl InMemoryNode {
-    pub fn new(fork: Option<ForkDetails>, show_calls: ShowCalls, skip_resolve: bool) -> Self {
+    pub fn new(
+        fork: Option<ForkDetails>,
+        show_calls: ShowCalls,
+        skip_resolve: bool,
+        dev_use_local_contracts: bool,
+    ) -> Self {
         InMemoryNode {
             inner: Arc::new(RwLock::new(InMemoryNodeInner {
                 current_timestamp: fork
@@ -179,10 +207,13 @@ impl InMemoryNode {
                     .unwrap_or(50_000_000_000),
                 tx_results: Default::default(),
                 blocks: Default::default(),
-                fork_storage: ForkStorage::new(fork),
+                fork_storage: ForkStorage::new(fork, dev_use_local_contracts),
                 show_calls,
                 skip_resolve,
                 console_log_handler: ConsoleLogHandler::default(),
+                dev_use_local_contracts,
+                playground_contracts: playground(dev_use_local_contracts),
+                baseline_contracts: baseline_contracts(dev_use_local_contracts),
             })),
         }
     }
@@ -219,13 +250,13 @@ impl InMemoryNode {
 
         let inner = self.inner.write().unwrap();
         let block_context = inner.create_block_context();
-        let block_properties = InMemoryNodeInner::create_block_properties();
+        let bootloader_code = &inner.playground_contracts;
+
+        let block_properties = InMemoryNodeInner::create_block_properties(bootloader_code);
 
         let mut storage_view = StorageView::new(&inner.fork_storage);
 
         let mut oracle_tools = OracleTools::new(&mut storage_view, HistoryEnabled);
-
-        let bootloader_code = &PLAYGROUND_SYSTEM_CONTRACTS;
 
         // init vm
         let mut vm = init_vm_inner(
@@ -292,18 +323,12 @@ impl InMemoryNode {
         let mut oracle_tools = OracleTools::new(&mut storage_view, HistoryEnabled);
 
         let bootloader_code = match execution_mode {
-            TxExecutionMode::VerifyExecute => &BASE_SYSTEM_CONTRACTS,
-            _ => &PLAYGROUND_SYSTEM_CONTRACTS,
+            TxExecutionMode::VerifyExecute => &inner.baseline_contracts,
+            _ => &inner.playground_contracts,
         };
-        /*
-        if execution_mode == TxExecutionMode::VerifyExecute {
-            &BASE_SYSTEM_CONTRACTS
-        } else {
-            &PLAYGROUND_SYSTEM_CONTRACTS
-        };*/
 
         let block_context = inner.create_block_context();
-        let block_properties = InMemoryNodeInner::create_block_properties();
+        let block_properties = InMemoryNodeInner::create_block_properties(&bootloader_code);
 
         let block = BlockInfo {
             batch_number: block_context.block_number,

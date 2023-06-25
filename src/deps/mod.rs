@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-
+pub mod system_contracts;
 use zksync_types::{
     get_code_key, get_known_code_key, get_system_context_init_logs,
     system_contracts::get_system_smart_contracts, L2ChainId, StorageKey, StorageLog,
@@ -8,8 +8,7 @@ use zksync_types::{
 
 use std::fmt;
 
-/// Network ID we use by defailt for in memory storage.
-pub const IN_MEMORY_STORAGE_DEFAULT_NETWORK_ID: u16 = 270;
+use self::system_contracts::COMPILED_IN_SYSTEM_CONTRACTS;
 
 /// In-memory storage.
 #[derive(Debug, Default)]
@@ -19,20 +18,17 @@ pub struct InMemoryStorage {
 }
 
 impl InMemoryStorage {
-    /// Constructs a storage that contains system smart contracts.
-    pub fn with_system_contracts(bytecode_hasher: impl Fn(&[u8]) -> H256) -> Self {
-        Self::with_system_contracts_and_chain_id(
-            L2ChainId(IN_MEMORY_STORAGE_DEFAULT_NETWORK_ID),
-            bytecode_hasher,
-        )
-    }
-
     /// Constructs a storage that contains system smart contracts (with a given chain id).
     pub fn with_system_contracts_and_chain_id(
         chain_id: L2ChainId,
         bytecode_hasher: impl Fn(&[u8]) -> H256,
+        load_contracts_from_files: bool,
     ) -> Self {
-        let contracts = get_system_smart_contracts();
+        let contracts = if load_contracts_from_files {
+            get_system_smart_contracts()
+        } else {
+            COMPILED_IN_SYSTEM_CONTRACTS.clone()
+        };
         let system_context_init_log = get_system_context_init_logs(chain_id);
 
         let state = contracts

@@ -49,7 +49,7 @@ pub struct ForkStorageInner {
 }
 
 impl ForkStorage {
-    pub fn new(fork: Option<ForkDetails>) -> Self {
+    pub fn new(fork: Option<ForkDetails>, dev_use_local_contracts: bool) -> Self {
         let chain_id = fork
             .as_ref()
             .and_then(|d| d.overwrite_chain_id)
@@ -61,6 +61,7 @@ impl ForkStorage {
                 raw_storage: InMemoryStorage::with_system_contracts_and_chain_id(
                     chain_id,
                     hash_bytecode,
+                    dev_use_local_contracts,
                 ),
                 value_read_cache: Default::default(),
                 fork,

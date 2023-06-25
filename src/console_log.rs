@@ -1,8 +1,8 @@
 use std::{collections::HashMap, str::FromStr};
 
-use ethabi::Function;
+use ethabi::{Contract, Function};
 use itertools::Itertools;
-use zksync_contracts::load_contract;
+use serde_json::Value;
 use zksync_types::vm_trace::Call;
 use zksync_types::H160;
 
@@ -23,9 +23,11 @@ pub const CONSOLE_ADDRESS: &str = "0x000000000000000000636f6e736f6c652e6c6f67";
 
 impl Default for ConsoleLogHandler {
     fn default() -> Self {
-        let contract = load_contract(
-            "etc/system-contracts/artifacts-zk/cache-zk/solpp-generated-contracts/Console.sol/console.json",
-        );
+        let mut val: Value =
+            serde_json::from_slice(include_bytes!("deps/contracts/Console.json")).unwrap();
+
+        let contract: Contract = serde_json::from_value(val["abi"].take()).unwrap();
+
         let mut signature_map: HashMap<[u8; 4], Function> = Default::default();
 
         for (_, functions) in contract.functions.iter() {

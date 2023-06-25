@@ -102,6 +102,10 @@ struct Cli {
     /// If true, the tool will not try to contact openchain to resolve the ABI & topic names.
     /// It will make debug log less readable, but will increase the performance.
     skip_resolve: bool,
+
+    #[arg(long)]
+    /// If true, will load the locally compiled system contracts (useful when doing changes to system contracts or bootloader)
+    dev_use_local_contracts: bool,
 }
 
 #[derive(Debug, Parser, Clone, clap::ValueEnum, PartialEq, Eq)]
@@ -192,7 +196,12 @@ async fn main() -> anyhow::Result<()> {
         vec![]
     };
 
-    let node = InMemoryNode::new(fork_details, opt.show_calls, opt.skip_resolve);
+    let node = InMemoryNode::new(
+        fork_details,
+        opt.show_calls,
+        opt.skip_resolve,
+        opt.dev_use_local_contracts,
+    );
 
     if !transactions_to_replay.is_empty() {
         node.apply_txs(transactions_to_replay);

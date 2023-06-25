@@ -4,7 +4,7 @@ pragma solidity >=0.4.22 <0.9.0;
 // List of console.log methods supported by our VM.
 // Look at console_log.rs file to see how they are catched and displayed (only if TRACE level logging is enabled for console target).
 // We don't support all the log methods (for example hardhat supports all type combinations up to 4) - as this drastically increases the compilation time.
-library console {
+library Console {
     address constant CONSOLE_ADDRESS =
         0x000000000000000000636F6e736F6c652e6c6f67;
 
