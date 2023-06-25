@@ -34,25 +34,20 @@ The easiest way is to install from source:
 cargo install --git https://github.com/mm-zk/era-test-node.git
 ```
 
+Rust should install it in ``~/.cargo/bin`` directory.
+
 If you get compile errors due to rocksDB, you might also want to install:
 
 ```
 apt-get install -y cmake pkg-config libssl-dev clang
 ```
 
-
 ## How to
 
 To start a node:
 
 ```shell
-ksync_test_node run
-```
-
-If you also want to see the logs printed by your contract (that uses console.log feature):
-
-```shell
-RUST_LOG=console=trace zksync_test_node run
+zksync_test_node run
 ```
 
 This will run a node (with an empty state) and make it available on port 8011
@@ -70,6 +65,39 @@ You can also specify the custom http endpoint and custom forking height:
 ```shell
 zksync_test_node fork --fork-at 7000000 http://172.17.0.3:3060
 ```
+
+Or replay locally a remote transaction (for example to see more debug
+information).
+
+```shell
+zksync_test_node replay_tx testnet 0x7f039bcbb1490b855be37e74cf2400503ad57f51c84856362f99b0cbf1ef478a
+```
+
+
+## Seeing more details of the transactions
+
+By default, the tool is just printing the basic information about the executed transactions (like status, gas used etc).
+
+But with `--show-calls` flag, it can print more detailed call traces, and with --resolve-hashes, it will ask openchain for ABI names.
+
+```shell
+$ zksync_test_node --show-calls=user --resolve-hashes replay_tx testnet 0x7f039bcbb1490b855be37e74cf2400503ad57f51c84856362f99b0cbf1ef478a
+
+
+Executing 0x7f039bcbb1490b855be37e74cf2400503ad57f51c84856362f99b0cbf1ef478a
+Transaction: SUCCESS
+Initiator: 0x55362182242a4de20ea8a0ec055b2134bb24e23d Payer: 0x55362182242a4de20ea8a0ec055b2134bb24e23d
+Gas Limit: 797128 used: 399148 refunded: 397980
+18 call traces. Use --show-calls flag to display more info.
+Call(Normal) 0x55362182242a4de20ea8a0ec055b2134bb24e23d 0x202bcce7   729918
+  Call(Normal) 0x0000000000000000000000000000000000000001 0xbb1e83e6   688275
+Call(Normal) 0x55362182242a4de20ea8a0ec055b2134bb24e23d 0xe2f318e3   693630
+Call(Normal) 0x55362182242a4de20ea8a0ec055b2134bb24e23d 0xdf9c1589   624834
+    Call(Mimic) 0x6eef3310e09df3aa819cc2aa364d4f3ad2e6ffe3 swapExactETHForTokens(uint256,address[],address,uint256)   562275
+      Call(Normal) 0x053f26a020de152a947b8ba7d8974c85c5fc5b81 getPair(address,address)   544068
+
+```
+
 
 ## Forking network & sending calls
 
@@ -119,41 +147,9 @@ run it with mainnet fork.
 cd etc/system-contracts
 yarn preprocess && yarn hardhat run ./scripts/compile-yul.ts
 cd -
-RUST_LOG=vm=trace cargo run -p zksync_test_node fork --fork-at 70000000 testnet
+RUST_LOG=vm=trace cargo run -p zksync_test_node fork --dev_use_local_contracts --fork-at 70000000 testnet
 ```
 
-## Replaying other network transaction locally
-
-Imagine, that you have a testnet transaction, that you'd like to replay locally (for example to see more debug
-information).
-
-```shell
-zksync_test_node replay_tx testnet 0x7f039bcbb1490b855be37e74cf2400503ad57f51c84856362f99b0cbf1ef478a
-```
-
-## Seeing more details of the transactions
-
-By default, the tool is just printing the basic information about the executed transactions (like status, gas used etc).
-
-But with `--show-calls` flag, it can print more detailed call traces, and with --resolve-hashes, it will ask openchain for ABI names.
-
-```shell
-$ zksync_test_node --show-calls=user --resolve-hashes replay_tx testnet 0x7f039bcbb1490b855be37e74cf2400503ad57f51c84856362f99b0cbf1ef478a
-
-
-Executing 0x7f039bcbb1490b855be37e74cf2400503ad57f51c84856362f99b0cbf1ef478a
-Transaction: SUCCESS
-Initiator: 0x55362182242a4de20ea8a0ec055b2134bb24e23d Payer: 0x55362182242a4de20ea8a0ec055b2134bb24e23d
-Gas Limit: 797128 used: 399148 refunded: 397980
-18 call traces. Use --show-calls flag to display more info.
-Call(Normal) 0x55362182242a4de20ea8a0ec055b2134bb24e23d 0x202bcce7   729918
-  Call(Normal) 0x0000000000000000000000000000000000000001 0xbb1e83e6   688275
-Call(Normal) 0x55362182242a4de20ea8a0ec055b2134bb24e23d 0xe2f318e3   693630
-Call(Normal) 0x55362182242a4de20ea8a0ec055b2134bb24e23d 0xdf9c1589   624834
-    Call(Mimic) 0x6eef3310e09df3aa819cc2aa364d4f3ad2e6ffe3 swapExactETHForTokens(uint256,address[],address,uint256)   562275
-      Call(Normal) 0x053f26a020de152a947b8ba7d8974c85c5fc5b81 getPair(address,address)   544068
-
-```
 
 ### How does it work
 
