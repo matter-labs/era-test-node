@@ -41,12 +41,9 @@
     ]
   },
   "scripts": {
-    "test": "zk f mocha test/system-contract-test.test.ts",
     "build": "hardhat compile",
-    "clean": "hardhat clean",
-    "fmt": "prettier --config prettier.js --write contracts/*.sol contracts/**/*.sol",
+    "clean": "hardhat clean && rm -rf ./bootloader/build",
     "preprocess": "rm -rf ./bootloader/build && yarn ts-node scripts/process.ts",
-    "deploy-preimages": "ts-node scripts/deploy-preimages.ts",
     "build-bootloader": "yarn hardhat run ./scripts/compile-yul.ts"
   }
 }

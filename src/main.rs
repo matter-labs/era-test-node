@@ -15,6 +15,7 @@ use core::fmt::Display;
 use node::InMemoryNode;
 
 use std::{
+    env,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     str::FromStr,
 };
@@ -156,6 +157,10 @@ struct ReplayArgs {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    if env::var_os("ZKSYNC_HOME").is_some() {
+        panic!("Please remove ZKSYNC_HOME env variable (as this might cause the node to behave in unexpected ways).");
+    }
+
     let opt = Cli::parse();
     let filter = EnvFilter::from_default_env();
 
