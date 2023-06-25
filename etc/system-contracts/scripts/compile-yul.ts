@@ -8,7 +8,7 @@ const COMPILER_VERSION = '1.3.7';
 const IS_COMPILER_PRE_RELEASE = false;
 
 async function compilerLocation(): Promise<string> {
-    if(IS_COMPILER_PRE_RELEASE) {
+    if (IS_COMPILER_PRE_RELEASE) {
         const url = getZksolcUrl('https://github.com/matter-labs/zksolc-prerelease', hre.config.zksolc.version);
         const salt = saltFromUrl(url);
         return await getZksolcPath(COMPILER_VERSION, salt);
@@ -58,9 +58,9 @@ function preparePaths(path: string, files: string[], outputDirName: string | nul
         })
         .join(' ');
     const outputDir = outputDirName || files[0];
-    let absolutePathSources = `${process.env.ZKSYNC_HOME}/etc/system-contracts/${path}`;
+    let absolutePathSources = `${path}`;
 
-    let absolutePathArtifacts = `${process.env.ZKSYNC_HOME}/etc/system-contracts/${path}/artifacts`;
+    let absolutePathArtifacts = `${path}/artifacts`;
 
     return new CompilerPaths(filePaths, outputDir, absolutePathSources, absolutePathArtifacts);
 }
