@@ -1,6 +1,6 @@
 use once_cell::sync::Lazy;
 use serde_json::Value;
-use zksync_basic_types::{AccountTreeId, Address};
+use zksync_basic_types::{AccountTreeId, Address, H160};
 use zksync_types::{
     block::DeployedContract, ACCOUNT_CODE_STORAGE_ADDRESS, BOOTLOADER_ADDRESS,
     BOOTLOADER_UTILITIES_ADDRESS, BYTECODE_COMPRESSOR_ADDRESS, CONTRACT_DEPLOYER_ADDRESS,
@@ -9,6 +9,27 @@ use zksync_types::{
     L2_ETH_TOKEN_ADDRESS, MSG_VALUE_SIMULATOR_ADDRESS, NONCE_HOLDER_ADDRESS,
     SHA256_PRECOMPILE_ADDRESS, SYSTEM_CONTEXT_ADDRESS,
 };
+
+
+pub const MODEXP_PRECOMPILE_ADDRESS: Address = H160([
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x05,
+]);
+
+pub const ECADD_PRECOMPILE_ADDRESS: Address = H160([
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x06,
+]);
+
+pub const ECMUL_PRECOMPILE_ADDRESS: Address = H160([
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x07,
+]);
+
+pub const ECPAIRING_PRECOMPILE_ADDRESS: Address = H160([
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x08,
+]);
 
 pub fn bytecode_from_slice(artifact_name: &str, contents: &[u8]) -> Vec<u8> {
     let artifact: Value = serde_json::from_slice(contents).expect(artifact_name);
@@ -107,6 +128,26 @@ pub static COMPILED_IN_SYSTEM_CONTRACTS: Lazy<Vec<DeployedContract>> = Lazy::new
             "EventWriter",
             EVENT_WRITER_ADDRESS,
             include_bytes!("contracts/EventWriter.yul.zbin").to_vec(),
+        ),
+        (
+            "ModExp",
+            MODEXP_PRECOMPILE_ADDRESS,
+            include_bytes!("contracts/ModExp.yul.zbin").to_vec(),
+        ),
+        (
+            "EcAdd",
+            ECADD_PRECOMPILE_ADDRESS,
+            include_bytes!("contracts/EcAdd.yul.zbin").to_vec(),
+        ),
+        (
+            "EcMul",
+            ECMUL_PRECOMPILE_ADDRESS,
+            include_bytes!("contracts/EcMul.yul.zbin").to_vec(),
+        ),
+        (
+            "EcPairing",
+            ECPAIRING_PRECOMPILE_ADDRESS,
+            include_bytes!("contracts/EcPairing.yul.zbin").to_vec(),
         ),
     ]
     .map(|(_pname, address, contents)| DeployedContract {

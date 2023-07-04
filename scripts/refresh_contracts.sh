@@ -12,7 +12,7 @@ for contract in "${contracts[@]}"; do
     cp $SRC_DIR/$contract.sol/$contract.json $DST_DIR
 done
 
-precompiles=("Ecrecover" "Keccak256" "SHA256")
+precompiles=("Ecrecover" "Keccak256" "SHA256" "ModExp" "EcAdd" "EcMul" "EcPairing")
 
 for precompile in "${precompiles[@]}"; do
     cp etc/system-contracts/contracts/precompiles/artifacts/$precompile.yul/$precompile.yul.zbin $DST_DIR
