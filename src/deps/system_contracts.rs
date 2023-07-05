@@ -31,6 +31,11 @@ pub const ECPAIRING_PRECOMPILE_ADDRESS: Address = H160([
     0x00, 0x00, 0x00, 0x08,
 ]);
 
+pub const CONSOLE_PRECOMPILE_ADDRESS: Address = H160([
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0xFF,
+]);
+
 pub fn bytecode_from_slice(artifact_name: &str, contents: &[u8]) -> Vec<u8> {
     let artifact: Value = serde_json::from_slice(contents).expect(artifact_name);
     let bytecode = artifact["bytecode"]
@@ -148,6 +153,11 @@ pub static COMPILED_IN_SYSTEM_CONTRACTS: Lazy<Vec<DeployedContract>> = Lazy::new
             "EcPairing",
             ECPAIRING_PRECOMPILE_ADDRESS,
             include_bytes!("contracts/EcPairing.yul.zbin").to_vec(),
+        ),
+        (
+            "Console",
+            CONSOLE_PRECOMPILE_ADDRESS,
+            include_bytes!("contracts/Console.yul.zbin").to_vec(),
         ),
     ]
     .map(|(_pname, address, contents)| DeployedContract {
