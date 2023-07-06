@@ -111,7 +111,7 @@ object "EcAdd" {
                               2, // output length in words (x3, y3)
                               0  // No special meaning
                         )
-                        let gasToPay := callvalue()
+                        let gasToPay := gas()
             
                         // Precompiles that do not have a circuit counterpart
                         // will burn the provided gas by calling this function.

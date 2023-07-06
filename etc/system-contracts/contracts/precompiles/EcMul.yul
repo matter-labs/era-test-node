@@ -172,7 +172,7 @@ object "EcMul" {
                               2, // output length in words (x2, y2)
                               0  // No special meaning
                         )
-                        let gasToPay := callvalue()
+                        let gasToPay := gas()
             
                         // Precompiles that do not have a circuit counterpart
                         // will burn the provided gas by calling this function.
