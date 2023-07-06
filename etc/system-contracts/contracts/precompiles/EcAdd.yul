@@ -128,7 +128,7 @@ object "EcAdd" {
                   let x2 := calldataload(64)
                   let y2 := calldataload(96)
 
-                  // Add the points.
+
                   if and(isInfinity(x1, y1), isInfinity(x2, y2)) {
                         // Infinity + Infinity = Infinity
                         mstore(0, ZERO())
@@ -205,32 +205,35 @@ object "EcAdd" {
                         mstore(32, y3)
                         return(0, 64)
                   }
-                  if iszero(eq(x1, x2)) {
-                        // P1 + P2 = P3
-
-                        // Ensure that the coordinates are between 0 and the group order.
-                        if or(iszero(isOnGroupOrder(x1)), iszero(isOnGroupOrder(y1)), iszero(isOnGroupOrder(x2)), iszero(isOnGroupOrder(y2))) {
-                              burnGas()
-                              revert(0, 0)
-                        }
-
-                        // Ensure that the points are in the curve (Y^2 = X^3 + 3).
-                        if or(iszero(pointIsInCurve(x1, y1)), iszero(pointIsInCurve(x2, y2))) {
-                              burnGas()
-                              revert(0, 0)
-                        }
-
-                        // (y2 - y1) / (x2 - x1)
-                        let slope := divmod(submod(y2, y1, ALT_BN128_GROUP_ORDER()), submod(x2, x1, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER())
-                        // x3 = slope^2 - x1 - x2
-                        let x3 := submod(mulmod(slope, slope, ALT_BN128_GROUP_ORDER()), addmod(x1, x2, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER())
-                        // y3 = slope * (x1 - x3) - y1
-                        let y3 := submod(mulmod(slope, submod(x1, x3, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER()), y1, ALT_BN128_GROUP_ORDER())
-
-                        mstore(0, x3)
-                        mstore(32, y3)
-                        return(0, 64)
+                  if and(eq(x1, x2), and(iszero(eq(y1, y2)), iszero(eq(y1, submod(0, y2, ALT_BN128_GROUP_ORDER()))))) {
+                        burnGas()
+                        revert(0, 0)
                   }
+
+                  // P1 + P2 = P3
+
+                  // Ensure that the coordinates are between 0 and the group order.
+                  if or(iszero(isOnGroupOrder(x1)), iszero(isOnGroupOrder(y1)), iszero(isOnGroupOrder(x2)), iszero(isOnGroupOrder(y2))) {
+                        burnGas()
+                        revert(0, 0)
+                  }
+
+                  // Ensure that the points are in the curve (Y^2 = X^3 + 3).
+                  if or(iszero(pointIsInCurve(x1, y1)), iszero(pointIsInCurve(x2, y2))) {
+                        burnGas()
+                        revert(0, 0)
+                  }
+
+                  // (y2 - y1) / (x2 - x1)
+                  let slope := divmod(submod(y2, y1, ALT_BN128_GROUP_ORDER()), submod(x2, x1, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER())
+                  // x3 = slope^2 - x1 - x2
+                  let x3 := submod(mulmod(slope, slope, ALT_BN128_GROUP_ORDER()), addmod(x1, x2, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER())
+                  // y3 = slope * (x1 - x3) - y1
+                  let y3 := submod(mulmod(slope, submod(x1, x3, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER()), y1, ALT_BN128_GROUP_ORDER())
+
+                  mstore(0, x3)
+                  mstore(32, y3)
+                  return(0, 64)
 		}
 	}
 }
