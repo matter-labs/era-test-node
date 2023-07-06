@@ -146,7 +146,8 @@ object "EcAdd" {
 
                         // Ensure that the point is in the curve (Y^2 = X^3 + 3).
                         if iszero(pointIsInCurve(x2, y2)) {
-                              return(0, 0)
+                              burnGas()
+                              revert(0, 0)
                         }
 
                         mstore(0, x2)
@@ -164,7 +165,8 @@ object "EcAdd" {
 
                         // Ensure that the point is in the curve (Y^2 = X^3 + 3).
                         if iszero(pointIsInCurve(x1, y1)) {
-                              return(0, 0)
+                              burnGas()
+                              revert(0, 0)
                         }
 
                         mstore(0, x1)
@@ -188,7 +190,8 @@ object "EcAdd" {
 
                         // Ensure that the points are in the curve (Y^2 = X^3 + 3).
                         if iszero(pointIsInCurve(x1, y1)) {
-                              return(0, 0)
+                              burnGas()
+                              revert(0, 0)
                         }
 
                         // (3 * x1^2 + a) / (2 * y1)
@@ -213,7 +216,8 @@ object "EcAdd" {
 
                         // Ensure that the points are in the curve (Y^2 = X^3 + 3).
                         if or(iszero(pointIsInCurve(x1, y1)), iszero(pointIsInCurve(x2, y2))) {
-                              return(0, 0)
+                              burnGas()
+                              revert(0, 0)
                         }
 
                         // (y2 - y1) / (x2 - x1)

@@ -211,7 +211,8 @@ object "EcMul" {
 
                         // Ensure that the point is in the curve (Y^2 = X^3 + 3).
                         if iszero(pointIsInCurve(x, y)) {
-                              return(0, 0)
+                              burnGas()
+                              revert(0, 0)
                         }
 
                         mstore(0, x)
@@ -233,7 +234,8 @@ object "EcMul" {
 
                   // Ensure that the point is in the curve (Y^2 = X^3 + 3).
                   if iszero(pointIsInCurve(x, y)) {
-                        return(0, 0)
+                        burnGas()
+                        revert(0, 0)
                   }
 
                   let x2 := x
