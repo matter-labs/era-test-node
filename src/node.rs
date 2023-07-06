@@ -21,7 +21,7 @@ use zksync_contracts::{
 };
 use zksync_core::api_server::web3::backend_jsonrpc::namespaces::eth::EthNamespaceT;
 use zksync_types::{
-    api::{TransactionReceipt, TransactionVariant},
+    api::{Log, TransactionReceipt, TransactionVariant},
     get_code_key, get_nonce_key,
     l2::L2Tx,
     transaction_request::{l2_tx_from_call_req, TransactionRequest},
@@ -588,10 +588,47 @@ impl EthNamespaceT for InMemoryNode {
                 U64::from(0)
             };
 
+            let logs: Vec<Log> = info
+                .result
+                .result
+                .logs
+                .events
+                .iter()
+                .map(|log| {
+                    let address = log.address;
+                    let topics = &log.indexed_topics;
+                    let data = log.value.clone();
+                    let block_hash = Some(hash);
+                    let block_number = Some(U64::from(info.miniblock_number));
+                    let l1_batch_number = Some(U64::from(info.batch_number as u64));
+                    let transaction_hash = Some(hash);
+                    let transaction_index = Some(U64::from(1).into());
+                    let log_index = Some(U256::default());
+                    let transaction_log_index = Some(U256::default());
+                    let log_type = None;
+                    let removed = None;
+
+                    Log {
+                        address,
+                        topics: topics.to_vec(),
+                        data: zksync_types::Bytes(data),
+                        block_hash,
+                        block_number,
+                        l1_batch_number,
+                        transaction_hash,
+                        transaction_index,
+                        log_index,
+                        transaction_log_index,
+                        log_type,
+                        removed,
+                    }
+                })
+                .collect();
+
             TransactionReceipt {
                 transaction_hash: hash,
                 transaction_index: U64::from(1),
-                block_hash: None,
+                block_hash: Some(hash),
                 block_number: Some(U64::from(info.miniblock_number)),
                 l1_batch_tx_index: None,
                 l1_batch_number: Some(U64::from(info.batch_number as u64)),
@@ -600,7 +637,7 @@ impl EthNamespaceT for InMemoryNode {
                 cumulative_gas_used: Default::default(),
                 gas_used: Some(info.tx.common_data.fee.gas_limit - info.result.gas_refunded),
                 contract_address: contract_address_from_tx_result(&info.result),
-                logs: vec![],
+                logs: logs,
                 l2_to_l1_logs: vec![],
                 status: Some(status),
                 root: None,
@@ -637,7 +674,8 @@ impl EthNamespaceT for InMemoryNode {
     // Methods below are not currently implemented.
 
     fn get_block_number(&self) -> jsonrpc_core::Result<zksync_basic_types::U64> {
-        not_implemented()
+        let reader = self.inner.read().unwrap();
+        Ok(U64::from(reader.current_miniblock))
     }
 
     fn estimate_gas(
@@ -645,11 +683,13 @@ impl EthNamespaceT for InMemoryNode {
         _req: zksync_types::transaction_request::CallRequest,
         _block: Option<zksync_types::api::BlockNumber>,
     ) -> jsonrpc_core::Result<U256> {
-        not_implemented()
+        let gas_used = U256::from(ETH_CALL_GAS_LIMIT);
+        Ok(gas_used)
     }
 
     fn gas_price(&self) -> jsonrpc_core::Result<U256> {
-        not_implemented()
+        let fair_l2_gas_price: u64 = 250_000_000; // 0.25 gwei
+        Ok(U256::from(fair_l2_gas_price))
     }
 
     fn new_filter(&self, _filter: Filter) -> jsonrpc_core::Result<U256> {
