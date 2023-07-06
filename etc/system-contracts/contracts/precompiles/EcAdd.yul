@@ -181,7 +181,7 @@ object "EcAdd" {
                         // P + P = 2P
 
                         // Ensure that the coordinates are between 0 and the group order.
-                        if or(isOnGroupOrder(x1), isOnGroupOrder(y1)) {
+                        if or(iszero(isOnGroupOrder(x1)), iszero(isOnGroupOrder(y1))) {
                               burnGas()
                               revert(0, 0)
                         }

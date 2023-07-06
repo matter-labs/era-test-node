@@ -14,6 +14,14 @@ object "EcMul" {
                         one := 0x1
                   }
 
+                  function TWO() -> two {
+                        two := 0x2
+                  }
+
+                  function THREE() -> three {
+                        three := 0x3
+                  }
+
                   // Group order of alt_bn128, see https://eips.ethereum.org/EIPS/eip-196
                   function ALT_BN128_GROUP_ORDER() -> ret {
                         ret := 21888242871839275222246405745257275088696311157297823662689037894645226208583
@@ -54,7 +62,7 @@ object "EcMul" {
                         let y_squared := mulmod(sint256_y, sint256_y, ALT_BN128_GROUP_ORDER())
                         let x_squared := mulmod(sint256_x, sint256_x, ALT_BN128_GROUP_ORDER())
                         let x_qubed := mulmod(x_squared, sint256_x, ALT_BN128_GROUP_ORDER())
-                        let x_qubed_plus_three := addmod(x_qubed, 3, ALT_BN128_GROUP_ORDER())
+                        let x_qubed_plus_three := addmod(x_qubed, THREE(), ALT_BN128_GROUP_ORDER())
 
                         ret := eq(y_squared, x_qubed_plus_three)
                   }
@@ -103,38 +111,53 @@ object "EcMul" {
                         if isInfinity(sint256_x, sint256_y) {
                               x := ZERO()
                               y := ZERO()
-                              return(x, y)
                         }
-                        // (3 * sint256_x^2 + a) / (2 * sint256_y)
-                        let slope := divmod(addmod(mulmod(3, mulmod(sint256_x, sint256_x, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER()), ZERO(), ALT_BN128_GROUP_ORDER()), addmod(sint256_y, sint256_y, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER())
-                        // x = slope^2 - 2 * sint256_x
-                        x := submod(mulmod(slope, slope, ALT_BN128_GROUP_ORDER()), addmod(sint256_x, sint256_x, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER())
-                        // y = slope * (sint256_x - x) - sint256_y
-                        y := submod(mulmod(slope, submod(sint256_x, x, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER()), sint256_y, ALT_BN128_GROUP_ORDER())
+                        if iszero(isInfinity(sint256_x, sint256_y)) {
+                              // (3 * sint256_x^2 + a) / (2 * sint256_y)
+                              let slope := divmod(mulmod(3, mulmod(sint256_x, sint256_x, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER()), addmod(sint256_y, sint256_y, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER())
+                              // x = slope^2 - 2 * x
+                              x := submod(mulmod(slope, slope, ALT_BN128_GROUP_ORDER()), addmod(sint256_x, sint256_x, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER())
+                              // y = slope * (sint256_x - x) - sint256_y
+                              y := submod(mulmod(slope, submod(sint256_x, x, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER()), sint256_y, ALT_BN128_GROUP_ORDER())
+                        }
                   }
 
                   function addPoints(sint256_x1, sint256_y1, sint256_x2, sint256_y2) -> x3, y3 {
-                        if isInfinity(sint256_x1, sint256_y1) {
-                              x3 := sint256_x2
-                              y3 := sint256_y2
-                              return(x3, y3)
-                        }
-                        if isInfinity(sint256_x2, sint256_y2) {
-                              x3 := sint256_x1
-                              y3 := sint256_y1
-                              return(x3, y3)
-                        }
+                        // if isInfinity(sint256_x1, sint256_y1) {
+                        //       x3 := sint256_x2
+                        //       y3 := sint256_y2
+                        // }
+                        // if isInfinity(sint256_x2, sint256_y2) {
+                        //       x3 := sint256_x1
+                        //       y3 := sint256_y1
+                        // }
                         if and(eq(sint256_x1, sint256_x2), eq(sint256_y1, sint256_y2)) {
                               // Double
                               x3, y3 := double(sint256_x1, sint256_y1)
-                              return(x3, y3)
                         }
-                        // (sint256_y2 - sint256_y1) / (sint256_x2 - sint256_x1)
-                        let slope := divmod(submod(sint256_y2, sint256_y1, ALT_BN128_GROUP_ORDER()), submod(sint256_x2, sint256_x1, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER())
-                        // x3 = slope^2 - sint256_x1 - sint256_x2
-                        x3 := submod(mulmod(slope, slope, ALT_BN128_GROUP_ORDER()), addmod(sint256_x1, sint256_x2, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER())
-                        // y3 = slope * (sint256_x1 - x3) - sint256_y1
-                        y3 := submod(mulmod(slope, submod(sint256_x1, x3, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER()), sint256_y1, ALT_BN128_GROUP_ORDER())
+                        if and(iszero(isInfinity(sint256_x1, sint256_y1)), iszero(isInfinity(sint256_x2, sint256_y2))) {
+                              // (sint256_y2 - sint256_y1) / (sint256_x2 - sint256_x1)
+                              let slope := divmod(
+                                    submod(sint256_y2, sint256_y1, ALT_BN128_GROUP_ORDER()), 
+                                    submod(sint256_x2, sint256_x1, ALT_BN128_GROUP_ORDER()), 
+                                    ALT_BN128_GROUP_ORDER()
+                              )
+                              // x3 = slope^2 - (sint256_x1 + sint256_x2)
+                              x3 := submod(
+                                    // slope^2
+                                    mulmod(slope, slope, ALT_BN128_GROUP_ORDER()),
+                                    // (sint256_x1 + sint256_x2)
+                                    addmod(sint256_x1, sint256_x2, ALT_BN128_GROUP_ORDER()),
+                                    ALT_BN128_GROUP_ORDER()
+                              )
+                              // y3 = slope * (sint256_x1 - x3) - sint256_y1
+                              y3 := submod(
+                                    // slope * (sint256_x1 - x3)
+                                    mulmod(slope, submod(sint256_x1, x3, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER()),
+                                    sint256_y1,
+                                    ALT_BN128_GROUP_ORDER()
+                              )
+                        }
                   }
 
                   function isOnGroupOrder(num) -> ret {
@@ -195,6 +218,12 @@ object "EcMul" {
                         mstore(32, y)
                         return(0, 64)
                   }
+                  if eq(scalar, TWO()) {
+                        let x2, y2 := double(x, y)
+                        mstore(0, x2)
+                        mstore(32, y2)
+                        return(0, 64)
+                  }
 
                   // Ensure that the coordinates are between 0 and the group order.
                   if or(iszero(isOnGroupOrder(x)), iszero(isOnGroupOrder(y))) {
@@ -207,10 +236,36 @@ object "EcMul" {
                         return(0, 0)
                   }
 
-                  let x2 := ZERO()
-                  let y2 := ZERO()
-                  for { let i := 0 } lt(i, scalar) { i := add(i, 1) } {
-                        x2, y2 := addPoints(x, y, x2, y2)
+                  let x2 := x
+                  let y2 := y
+                  for { let i := 2 } lt(i, scalar) { i := add(i, 1) } {
+                        if and(eq(x, x2), eq(y, y2)) {
+                              // Double
+                              x2, y2 := double(x2, y2)
+                        }
+                        if or(iszero(eq(x, x2)), iszero(eq(y, y2))) {
+                              // (y2 - y) / (x2 - x)
+                              let slope := divmod(
+                                    submod(y2, y, ALT_BN128_GROUP_ORDER()), 
+                                    submod(x2, x, ALT_BN128_GROUP_ORDER()), 
+                                    ALT_BN128_GROUP_ORDER()
+                              )
+                              // x2 = slope^2 - (x + x2)
+                              x2 := submod(
+                                    // slope^2
+                                    mulmod(slope, slope, ALT_BN128_GROUP_ORDER()),
+                                    // (x + x2)
+                                    addmod(x, x2, ALT_BN128_GROUP_ORDER()),
+                                    ALT_BN128_GROUP_ORDER()
+                              )
+                              // y2 = slope * (x - x2) - y
+                              y2 := submod(
+                                    // slope * (x - x2)
+                                    mulmod(slope, submod(x, x2, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER()),
+                                    y,
+                                    ALT_BN128_GROUP_ORDER()
+                              )
+                        }
                   }
 
                   mstore(0, x2)
