@@ -14,15 +14,6 @@ object "ModExp" {
                 one := 0x1
             }
 
-            function GQUADDIVISOR() -> ret {
-                ret := 20
-            }
-
-            // function MODEXP_GAS_COST(sint256_length_of_BASE, sint256_length_of_MODULUS) -> modexpGasCost {
-            //     // TODO: Find the correct amount of gas to burn
-            //     modexpGasCost := floor(mult_complexity(max(sint256_length_of_BASE, sint256_length_of_MODULUS)) * max(ADJUSTED_EXPONENT_LENGTH, 1) / GQUADDIVISOR)
-            // }
-
             //////////////////////////////////////////////////////////////////
             //                      HELPER FUNCTIONS
             //////////////////////////////////////////////////////////////////
@@ -54,30 +45,42 @@ object "ModExp" {
             //                      FALLBACK
             ////////////////////////////////////////////////////////////////
 
-            let base_length := calldataload(0)
-            let exponent_length := calldataload(32)
-            let modulus_length := calldataload(64)
-            let base := calldatacopy(0, 64, base_length)
-            let exponent := calldatacopy(base_length, 96, exponent_length)
-            let modulus := calldatacopy(add(base_length, exponent_length), 128, modulus_length)
+            calldatacopy(0, 0, 32)
+            let base_length := mload(0)
 
-            // base^0 % modulus = 1
-            if iszero(exponent) {
-                mstore(0, ONE())
-                return(0, 32)
-            }
+            calldatacopy(32, 32, 32)
+            let exponent_length := mload(32)
 
-            // base^exponent % 0 = 0
-            if iszero(modulus) {
-                let s := add(add(base_length, exponent_length), modulus_length)
-                mstore(s, ZERO())
-                return(s, modulus_length)
-            }
+            calldatacopy(64, 64, 32)
+            let modulus_length := mload(64)
+
+            let next_free_pointer := 96
+            calldatacopy(add(96, sub(32, base_length)), next_free_pointer, base_length)
+            let base := mload(next_free_pointer)
+
+            next_free_pointer := add(next_free_pointer, base_length)
+            calldatacopy(add(128, sub(32, exponent_length)), next_free_pointer, exponent_length)
+            let exponent := mload(next_free_pointer)
+            
+            next_free_pointer := add(next_free_pointer, exponent_length)
+            calldatacopy(add(160, sub(32, modulus_length)), next_free_pointer, modulus_length)
+            let modulus := mload(next_free_pointer)
+
+            // // base^0 % modulus = 1
+            // if iszero(exponent) {
+            //     mstore(0, ONE())
+            //     return(0, modulus_length)
+            // }
+
+            // // base^exponent % 0 = 0
+            // if iszero(modulus) {
+            //     let s := add(add(base_length, exponent_length), modulus_length)
+            //     mstore(s, ZERO())
+            //     return(s, modulus_length)
+            // }
 
             let pow := 1
-            base := mod(base, modulus)
-            exponent := mod(exponent, sub(modulus, 1))
-            for { let i := 0 } gt(exponent, ZERO()) { i := add(i, 1) } {
+            for { } gt(exponent, ZERO()) { } {
                     if eq(mod(exponent, 2), ONE()) {
                         pow := mulmod(pow, base, modulus)
                     }
@@ -85,8 +88,13 @@ object "ModExp" {
                     base := mulmod(base, base, modulus)
             }
 
-            mstore(0, pow)
-            return(0, modulus_length)
+            next_free_pointer := add(next_free_pointer, modulus_length)
+            mstore(next_free_pointer, pow)
+            return(next_free_pointer, modulus_length)
 		}
 	}
 }
+
+// pow: 1 base: 2 exp: 3
+// pow: 2 base: 4 exp: 1
+// pow: 8 base: 16 exp: 0
