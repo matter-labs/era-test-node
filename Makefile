@@ -1,3 +1,7 @@
+build-precompiles:
+	cd etc/system-contracts && yarn; yarn install; yarn build; yarn build-bootloader
+	./scripts/refresh_precompiles.sh
+
 build-contracts:
 	cd etc/system-contracts && yarn; yarn install; yarn build; yarn preprocess; yarn build-bootloader
 	./scripts/refresh_contracts.sh
