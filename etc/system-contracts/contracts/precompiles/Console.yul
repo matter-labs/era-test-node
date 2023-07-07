@@ -1,9 +1,7 @@
 object "Console" {
-	
-	code { }
-	object "Console_deployed" {
-		code {
-
+    code { }
+    object "Console_deployed" {
+        code {
             // CONSOLE.LOG Caller
             // It prints 'val' in the node console and it works using the 'mem'+0x40 memory sector
             function console_log(mem, val) -> {
@@ -19,9 +17,8 @@ object "Console" {
                     revert(0,0)
                 }
             }
-
             // EXAMPLE
             console_log(0x80,0xAC)
-		}
-	}
+        }
+    }
 }
