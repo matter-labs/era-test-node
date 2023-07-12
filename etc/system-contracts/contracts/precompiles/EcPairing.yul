@@ -22,6 +22,10 @@ object "EcPairing" {
                 nine := 0x9
             }
 
+			function PAIR_LENGTH() -> pairLength {
+				pairLength := 192
+			}
+
 			function Q() -> q {
 				q := 21888242871839275222246405745257275088548364400416034343698204186575808495617
 			}
@@ -35,9 +39,11 @@ object "EcPairing" {
 				y := 2
 			}
 
-			function G2_GENERATOR(i) -> x, y {
-				x := add(mul(11559732032986387107991004021392285783925812861821192530917403151452391805634, i), 10857046999023057135944570762232829481370756359578518086990519993285655852781)
-				y := add(mul(4082367875863433681332203403145435568316851327593401208105741076214120093531, i), 8495653923123431417604973247489272438418190587263600148770280649306958101930)
+			function G2_GENERATOR(i) -> ix, x, iy, y {
+				ix := 11559732032986387107991004021392285783925812861821192530917403151452391805634
+				x := 10857046999023057135944570762232829481370756359578518086990519993285655852781
+				iy := 4082367875863433681332203403145435568316851327593401208105741076214120093531
+				y := 8495653923123431417604973247489272438418190587263600148770280649306958101930
 			}
 
 			// ////////////////////////////////////////////////////////////////
@@ -118,7 +124,8 @@ object "EcPairing" {
 			}
 
 			// G2 -> Y^2 = X^3 + 3/(i+9)
-			function pointIsOnG2(x, y, i) -> ret {
+			//    -> (iy + y)^2 = (ix + x)^3 + 3/(i+9)
+			function pointIsOnG2(ix, x, iy, y) -> ret {
 				let y_squared := mulmod(y, y, P())
 				let x_squared := mulmod(x, x, P())
 				let x_qubed := mulmod(x_squared, x, P())
@@ -131,16 +138,42 @@ object "EcPairing" {
 				ret := eq(y_squared, x_qubed_plus_three_over_i_times_nine)
 			}
 
-			function log_P1(a) {
+			function isG1Infinity(x, y) -> ret {
+				ret := and(eq(x, ZERO()), eq(y, ZERO()))
+			}
+
+			function isG2Infinity(ix, x, iy, y) {
+				ret := and(eq(ix, ZERO()), eq(x, ZERO()), eq(iy, ZERO()), eq(y, ZERO()))
+			}
+
+			function finalExponentiation(...) {
 
 			}
 
-			function log_P2(b) {
+			function miller(g1_x, g1_y, g2_ix, g1_x, g2_iy, g2_x) {
 
 			}
 
-			function checkPairing(...) {
-				
+			function checkPairing() -> ret {
+		  		let inputSize := calldatasize()
+				  
+				acc := ONE()
+				for { let i := 0 } lt(i, inputSize) { i := add(i, PAIR_LENGTH()) } {
+					let g1_x := mload(i)
+					let g1_y := mload(add(i, 32))
+
+					let g2_ix := mload(add(i, 64))
+					let g2_x := mload(add(i, 96))
+					let g2_iy := mload(add(i, 128))
+					let g2_y := mload(add(i, 160))
+
+					if or(isG1Infinity(g1_x, g1_y), isG2Infinity(g2_ix, g2_x, g2_iy, g2_y)) {
+						continue
+					}
+
+					acc.Mul(acc, miller(g1_x, g1_y, g2_ix, g2_x, g2_iy, g2_y))
+				}
+				return eq(finalExponentiation(acc), ONE())
 			}
 
 			////////////////////////////////////////////////////////////////
@@ -156,18 +189,16 @@ object "EcPairing" {
 			}
 
 			// If the input length is not a multiple of 192, the call fails.
-            if iszero(eq(mod(inputSize, 192), 0)) {
+            if iszero(eq(mod(inputSize, PAIR_LENGTH()), 0)) {
                 // Bad pairing input
 				burnGas()
                 revert(0, 0)
             }
 
-			// let k := div(inputSize, 192)
-
-			for { let i := 0 } lt(i, inputSize) { i := add(i, 192) } {
+			for { let i := 0 } lt(i, inputSize) { i := add(i, PAIR_LENGTH()) } {
 				/* G1 */
-				calldatacopy(i, i, 32)
-				calldatacopy(add(i, 32), add(i, 32), 32)
+				calldatacopy(i, i, 32) // x
+				calldatacopy(add(i, 32), add(i, 32), 32) // y
 
 				let g1_x := mload(i)
 				let g1_y := mload(add(i, 32))
@@ -178,20 +209,31 @@ object "EcPairing" {
 				}
 
 				/* G2 */
-				calldatacopy(add(i, 64), add(i, 64), 64) // x
-				calldatacopy(add(i, 128), add(i, 128), 64) // y
+				let g2_ix_offset := add(i, 64)
+				let g2_x_offset := add(i, 96)
+				let g2_iy_offset := add(i, 128)
+				let g2_y_offset := add(i, 160)
 
-				let g2_x := mload(add(i, 64))
-				let g2_y := mload(add(i, 128))
+				calldatacopy(g2_ix_offset, g2_ix_offset, 32)
+				calldatacopy(g2_x_offset, g2_x_offset, 32)
+				calldatacopy(g2_iy_offset, g2_iy_offset, 32)
+				calldatacopy(g2_y_offset, g2_y_offset, 32)
 
-				if iszero(pointIsOnG2(g2_x, g2_y, i)) {
+				let g2_ix := mload(g2_ix_offset)
+				let g2_x := mload(g2_x_offset)
+				let g2_iy := mload(g2_iy_offset)
+				let g2_y := mload(g2_y_offset)
+
+				if iszero(pointIsOnG2(g2_ix, g2_x, g2_iy, g2_y)) {
 					burnGas()
 					revert(0, 0)
 				}
 			}
 
+			let k := div(inputSize, PAIR_LENGTH())
+
 			// Return one if log_P1(a1) * log_P2(b1) + ... + log_P1(ak) * log_P2(bk) = 0
-			if iszero(checkPairing(...)) {
+			if iszero(checkPairing(k)) {
 				mstore(0, ONE())
 				return(0, 32)
 			}
