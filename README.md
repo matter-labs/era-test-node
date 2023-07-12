@@ -15,17 +15,18 @@ Current limitations:
 - No support for accessing historical data, such as the storage state at a specific block.
 - Only one transaction is allowed per Layer 1 batch.
 - Fixed values are returned for zk Gas estimation.
+- With every redeploy of the local node, MetaMask will require a reset of cached account data (Settings >> Advanced >> Click `Clear activity tab data`)
 
 Current features:
 
 - Can fork the state of the mainnet, testnet, or a custom network at any given height.
-- Can replay the existing mainnet, testnet transaaction.
+- Can replay the existing mainnet, testnet transaction.
 - Uses local bootloader and system contracts, making it suitable for testing new changes.
 - When running in non-fork mode, it operates deterministically (only one transaction per block, etc.), which simplifies
   testing.
 - Starts up quickly and comes pre-configured with a few 'rich' accounts.
 - Supports hardhat's console.log debugging.
-- Can resolve the names of ABI functions and Events (using openchain)
+- Can resolve the names of ABI functions and Events (using openchain).
 
 ## Installation
 
@@ -130,7 +131,7 @@ zkcast call 0x493257fD37EDB34451f62EDf8D2a0C418852bA4C "name()(string)" --rpc-ur
 And you can also build & deploy your own contracts:
 
 ```shell
-zkforge zkc src/Greeter.sol:Greeter --constructor-args "ZkSync and Foundry" --private-key 7726827caac94a7f9e1b160f7ea819f172f7b6f9d2a97f992c38edeab82d4110 --rpc-url http://localhost:8011 --chain 270
+zkforge zkc src/Greeter.sol:Greeter --constructor-args "ZkSync and Foundry" --private-key 7726827caac94a7f9e1b160f7ea819f172f7b6f9d2a97f992c38edeab82d4110 --rpc-url http://localhost:8011 --chain 260
 
 ```
 
@@ -162,7 +163,7 @@ Moreover it also uses the remote server (openchain) to resolve the ABI and topic
 
 
 ## Rich accounts
-The node is also starting with a bunch of tokens allocated to the following accounts, that you can use for testing:
+The node is also starting with 10000 ETH allocated to each of the following accounts, so that you can use for testing:
 
 | account id | private key |
 |---|---|

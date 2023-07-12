@@ -13,6 +13,7 @@ mod zks;
 
 use core::fmt::Display;
 use node::InMemoryNode;
+use zksync_core::api_server::web3::namespaces::NetNamespace;
 
 use std::{
     env,
@@ -29,11 +30,12 @@ use futures::{
     FutureExt,
 };
 use jsonrpc_core::IoHandler;
-use zksync_basic_types::{H160, H256};
+use zksync_basic_types::{H160, H256, L2ChainId};
 
 use zksync_core::api_server::web3::backend_jsonrpc::namespaces::{
-    eth::EthNamespaceT, zks::ZksNamespaceT,
+    eth::EthNamespaceT, zks::ZksNamespaceT, net::NetNamespaceT
 };
+use crate::node::TEST_NODE_NETWORK_ID;
 
 /// List of wallets (address, private key) that we seed with tokens at start.
 pub const RICH_WALLETS: [(&str, &str); 4] = [
@@ -55,12 +57,13 @@ pub const RICH_WALLETS: [(&str, &str); 4] = [
     ),
 ];
 
-async fn build_json_http(addr: SocketAddr, node: InMemoryNode) -> tokio::task::JoinHandle<()> {
+async fn build_json_http(addr: SocketAddr, node: InMemoryNode, net: NetNamespace) -> tokio::task::JoinHandle<()> {
     let (sender, recv) = oneshot::channel::<()>();
 
     let io_handler = {
         let mut io = IoHandler::new();
         io.extend_with(node.to_delegate());
+        io.extend_with(net.to_delegate());
         io.extend_with(ZkMockNamespaceImpl.to_delegate());
 
         io
@@ -212,15 +215,22 @@ async fn main() -> anyhow::Result<()> {
         node.apply_txs(transactions_to_replay);
     }
 
-    println!("Setting Rich accounts:");
-    for (address, private_key) in RICH_WALLETS.iter() {
+    println!("\nRich Accounts");
+    println!("=============");
+    for (index, wallet) in RICH_WALLETS.iter().enumerate() {
+        let address = wallet.0;
+        let private_key = wallet.1;
         node.set_rich_account(H160::from_str(address).unwrap());
-        println!("Address: {:?} Key: {:?}", address, private_key)
+        println!("Account #{}: {} (10000 ETH)", index, address);
+        println!("Private Key: {}\n", private_key);
     }
+
+    let net = NetNamespace::new(L2ChainId(TEST_NODE_NETWORK_ID));
 
     let threads = build_json_http(
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), opt.port),
         node,
+        net,
     )
     .await;
 
