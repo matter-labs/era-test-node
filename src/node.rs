@@ -266,7 +266,7 @@ impl InMemoryNode {
         let bootloader_code = &inner.playground_contracts;
 
         let block_context = inner.create_block_context();
-        let block_properties = InMemoryNodeInner::create_block_properties(&bootloader_code);
+        let block_properties = InMemoryNodeInner::create_block_properties(bootloader_code);
 
         // init vm
         let mut vm = init_vm_inner(
@@ -339,7 +339,7 @@ impl InMemoryNode {
         };
 
         let block_context = inner.create_block_context();
-        let block_properties = InMemoryNodeInner::create_block_properties(&bootloader_code);
+        let block_properties = InMemoryNodeInner::create_block_properties(bootloader_code);
 
         let block = BlockInfo {
             batch_number: block_context.block_number,
@@ -623,7 +623,7 @@ impl EthNamespaceT for InMemoryNode {
                     let block_number = Some(U64::from(info.miniblock_number));
                     let l1_batch_number = Some(U64::from(info.batch_number as u64));
                     let transaction_hash = Some(hash);
-                    let transaction_index = Some(U64::from(1).into());
+                    let transaction_index = Some(U64::from(1));
                     let log_index = Some(U256::default());
                     let transaction_log_index = Some(U256::default());
                     let log_type = None;
@@ -658,7 +658,7 @@ impl EthNamespaceT for InMemoryNode {
                 cumulative_gas_used: Default::default(),
                 gas_used: Some(info.tx.common_data.fee.gas_limit - info.result.gas_refunded),
                 contract_address: contract_address_from_tx_result(&info.result),
-                logs: logs,
+                logs,
                 l2_to_l1_logs: vec![],
                 status: Some(status),
                 root: None,
