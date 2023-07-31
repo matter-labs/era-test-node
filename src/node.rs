@@ -227,6 +227,10 @@ impl InMemoryNode {
         }
     }
 
+    pub fn get_inner(&self) -> Arc<RwLock<InMemoryNodeInner>> {
+        self.inner.clone()
+    }
+
     /// Applies multiple transactions - but still one per L1 batch.
     pub fn apply_txs(&self, txs: Vec<L2Tx>) {
         println!("Running {:?} transactions (one per batch)", txs.len());
@@ -386,7 +390,7 @@ impl InMemoryNode {
         }
 
         println!(
-            "\n==== {} Use --show-calls flag to display more info.",
+            "\n==== {} Use --show-calls flag or call config_setResolveHashes to display more info.",
             format!("{:?} call traces. ", tx_result.call_traces.len()).bold()
         );
 

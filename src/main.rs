@@ -1,7 +1,9 @@
 use clap::{Parser, Subcommand};
+use configuration_api::ConfigurationApiNamespaceT;
 use fork::ForkDetails;
 use zks::ZkMockNamespaceImpl;
 
+mod configuration_api;
 mod console_log;
 mod deps;
 mod fork;
@@ -32,7 +34,7 @@ use futures::{
 use jsonrpc_core::IoHandler;
 use zksync_basic_types::{L2ChainId, H160, H256};
 
-use crate::node::TEST_NODE_NETWORK_ID;
+use crate::{configuration_api::ConfigurationApiNamespace, node::TEST_NODE_NETWORK_ID};
 use zksync_core::api_server::web3::backend_jsonrpc::namespaces::{
     eth::EthNamespaceT, net::NetNamespaceT, zks::ZksNamespaceT,
 };
@@ -61,6 +63,7 @@ async fn build_json_http(
     addr: SocketAddr,
     node: InMemoryNode,
     net: NetNamespace,
+    config_api: ConfigurationApiNamespace,
 ) -> tokio::task::JoinHandle<()> {
     let (sender, recv) = oneshot::channel::<()>();
 
@@ -68,6 +71,7 @@ async fn build_json_http(
         let mut io = IoHandler::new();
         io.extend_with(node.to_delegate());
         io.extend_with(net.to_delegate());
+        io.extend_with(config_api.to_delegate());
         io.extend_with(ZkMockNamespaceImpl.to_delegate());
 
         io
@@ -121,6 +125,20 @@ pub enum ShowCalls {
     User,
     System,
     All,
+}
+
+impl FromStr for ShowCalls {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_ref() {
+            "none" => Ok(ShowCalls::None),
+            "user" => Ok(ShowCalls::User),
+            "system" => Ok(ShowCalls::System),
+            "all" => Ok(ShowCalls::All),
+            _ => Err(()),
+        }
+    }
 }
 
 impl Display for ShowCalls {
@@ -231,10 +249,13 @@ async fn main() -> anyhow::Result<()> {
 
     let net = NetNamespace::new(L2ChainId(TEST_NODE_NETWORK_ID));
 
+    let config_api = ConfigurationApiNamespace::new(node.get_inner());
+
     let threads = build_json_http(
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), opt.port),
         node,
         net,
+        config_api,
     )
     .await;
 
