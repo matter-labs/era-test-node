@@ -14,14 +14,46 @@ object "EcAdd" {
                         one := 0x1
                   }
 
+                  function THREE() -> three {
+                        three := 0x3
+                  }
+
                   // Group order of alt_bn128, see https://eips.ethereum.org/EIPS/eip-196
                   function ALT_BN128_GROUP_ORDER() -> ret {
                         ret := 21888242871839275222246405745257275088696311157297823662689037894645226208583
                   }
 
+                  function R() -> r {
+                        r := 115792089237316195423570985008687907853269984665640564039457584007913129639936
+                  }
+
+                  // function R2() -> r {
+                  //       r := 13407807929942597099574024998205846127479365820592393377723561443721764030073546976801874298166903427690031858186486050853753882811946569946433649006084096
+                  // }
+
+                  function R2_mod_ALT_BN128_GROUP_ORDER() -> ret {
+                        ret := 3096616502983703923843567936837374451735540968419076528771170197431451843209
+                  }
+
                   // ////////////////////////////////////////////////////////////////
                   //                      HELPER FUNCTIONS
                   // ////////////////////////////////////////////////////////////////
+
+                  // CONSOLE.LOG Caller
+                  // It prints 'val' in the node console and it works using the 'mem'+0x40 memory sector
+                  function console_log(mem, val) -> {
+                        let log_address := 0x000000000000000000636F6e736F6c652e6c6f67
+                        // load the free memory pointer
+                        let freeMemPointer := mload(mem)
+                        // store the function selector of log(uint256) in memory
+                        mstore(freeMemPointer, 0xf82c50f1)
+                        // store the first argument of log(uint256) in the next memory slot
+                        mstore(add(freeMemPointer, 0x20), val)
+                        // call the console.log contract
+                        if iszero(staticcall(gas(),log_address,add(freeMemPointer, 28),add(freeMemPointer, 0x40),0x00,0x00)) {
+                              revert(0,0)
+                        }
+                  }
 
                   // @dev Packs precompile parameters into one word.
                   // Note: functions expect to work with 32/64 bits unsigned integers.
@@ -118,6 +150,26 @@ object "EcAdd" {
                         precompileCall(precompileParams, gasToPay)
                   }
 
+                  function REDC(n, modulus) -> S {
+                        let m := mod(mul(mod(n, R()), invmod(modulus, modulus)), R())
+                        let t := div(add(n, mul(m, modulus)), R())
+                        if or(gt(t, modulus), eq(t, modulus)) {
+                              S := sub(t, modulus)
+                        }
+                        if lt(t, modulus) {
+                              S := t
+                        }
+                  }
+
+                  // Transforming into the Montgomery form -> REDC((a mod N)(R2 mod N))
+                  function intoMontgomeryForm(felt) -> ret {
+                        ret := REDC(mul(mod(felt, ALT_BN128_GROUP_ORDER()), R2_mod_ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER())
+                  }
+
+                  function fromMontgomeryForm(montgomeryFelt) -> ret {
+                        ret := REDC(mod(mul(montgomeryFelt, R()), ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER())
+                  }
+
                   ////////////////////////////////////////////////////////////////
                   //                      FALLBACK
                   ////////////////////////////////////////////////////////////////
@@ -128,6 +180,14 @@ object "EcAdd" {
                   let x2 := calldataload(64)
                   let y2 := calldataload(96)
 
+                  x1 := intoMontgomeryForm(x1)
+                  y1 := intoMontgomeryForm(y1)
+                  x1 := fromMontgomeryForm(x1)
+                  y1 := fromMontgomeryForm(y1)
+
+                  mstore(0, x1)
+                  mstore(32, y1)
+                  return(0, 64)
 
                   if and(isInfinity(x1, y1), isInfinity(x2, y2)) {
                         // Infinity + Infinity = Infinity
@@ -194,17 +254,27 @@ object "EcAdd" {
                               revert(0, 0)
                         }
 
+                        // Transform the coordinates into the Montgomery form
+                        x1 := intoMontgomeryForm(x1)
+                        y1 := intoMontgomeryForm(y1)
+                        x2 := intoMontgomeryForm(x2)
+                        y2 := intoMontgomeryForm(y2)
+
                         // (3 * x1^2 + a) / (2 * y1)
-                        let slope := divmod(mulmod(3, mulmod(x1, x1, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER()), addmod(y1, y1, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER())
+                        let slope := divmod(mulmod(THREE(), mulmod(x1, x1, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER()), addmod(y1, y1, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER())
                         // x3 = slope^2 - 2 * x1
                         let x3 := submod(mulmod(slope, slope, ALT_BN128_GROUP_ORDER()), addmod(x1, x1, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER())
                         // y3 = slope * (x1 - x3) - y1
                         let y3 := submod(mulmod(slope, submod(x1, x3, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER()), y1, ALT_BN128_GROUP_ORDER())
 
+                        x3 := fromMontgomeryForm(x3)
+                        y3 := fromMontgomeryForm(y3)
+
                         mstore(0, x3)
                         mstore(32, y3)
                         return(0, 64)
                   }
+
                   if and(eq(x1, x2), and(iszero(eq(y1, y2)), iszero(eq(y1, submod(0, y2, ALT_BN128_GROUP_ORDER()))))) {
                         burnGas()
                         revert(0, 0)
@@ -224,12 +294,21 @@ object "EcAdd" {
                         revert(0, 0)
                   }
 
+                  // Transform the coordinates into the Montgomery form
+                  x1 := intoMontgomeryForm(x1)
+                  y1 := intoMontgomeryForm(y1)
+                  x2 := intoMontgomeryForm(x2)
+                  y2 := intoMontgomeryForm(y2)
+
                   // (y2 - y1) / (x2 - x1)
                   let slope := divmod(submod(y2, y1, ALT_BN128_GROUP_ORDER()), submod(x2, x1, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER())
                   // x3 = slope^2 - x1 - x2
                   let x3 := submod(mulmod(slope, slope, ALT_BN128_GROUP_ORDER()), addmod(x1, x2, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER())
                   // y3 = slope * (x1 - x3) - y1
                   let y3 := submod(mulmod(slope, submod(x1, x3, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER()), y1, ALT_BN128_GROUP_ORDER())
+
+                  x3 := fromMontgomeryForm(x3)
+                  y3 := fromMontgomeryForm(y3)
 
                   mstore(0, x3)
                   mstore(32, y3)
