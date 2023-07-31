@@ -46,6 +46,14 @@ object "EcPairing" {
 				y := 8495653923123431417604973247489272438418190587263600148770280649306958101930
 			}
 
+			function ATE_LOOP_COUNT() -> count {
+				count := 29793968203157093288
+			}
+
+			function LOG_ATE_LOOP_COUNT() -> log_count {
+				log_count := 63
+			}
+
 			// ////////////////////////////////////////////////////////////////
 			//                      HELPER FUNCTIONS
 			// ////////////////////////////////////////////////////////////////
@@ -126,38 +134,61 @@ object "EcPairing" {
 			// G2 -> Y^2 = X^3 + 3/(i+9)
 			//    -> (iy + y)^2 = (ix + x)^3 + 3/(i+9)
 			function pointIsOnG2(ix, x, iy, y) -> ret {
-				let y_squared := mulmod(y, y, P())
-				let x_squared := mulmod(x, x, P())
-				let x_qubed := mulmod(x_squared, x, P())
+				// let y_squared := mulmod(y, y, P())
+				// let x_squared := mulmod(x, x, P())
+				// let x_qubed := mulmod(x_squared, x, P())
 
-				let i_times_nine := addmod(i, NINE(), P())
-				let three_over_i_times_nine := divmod(THREE(), i_times_nine, P())
+				// let i_times_nine := addmod(i, NINE(), P())
+				// let three_over_i_times_nine := divmod(THREE(), i_times_nine, P())
 
-				let x_qubed_plus_three_over_i_times_nine := addmod(x_qubed, three_over_i_times_nine, P())
+				// let x_qubed_plus_three_over_i_times_nine := addmod(x_qubed, three_over_i_times_nine, P())
 
-				ret := eq(y_squared, x_qubed_plus_three_over_i_times_nine)
+				// ret := eq(y_squared, x_qubed_plus_three_over_i_times_nine)
 			}
 
 			function isG1Infinity(x, y) -> ret {
 				ret := and(eq(x, ZERO()), eq(y, ZERO()))
 			}
 
-			function isG2Infinity(ix, x, iy, y) {
+			function isG2Infinity(ix, x, iy, y) -> ret {
 				ret := and(eq(ix, ZERO()), eq(x, ZERO()), eq(iy, ZERO()), eq(y, ZERO()))
 			}
 
-			function finalExponentiation(...) {
+			// function finalExponentiation(...) {
 
-			}
+			// }
 
-			function miller(g1_x, g1_y, g2_ix, g1_x, g2_iy, g2_x) {
+			// def miller_loop(Q, P):
+			// 	if Q is None or P is None:
+			// 		return FQ12.one()
+			// 	R = Q
+			// 	f = FQ12.one()
+			// 	for i in range(log_ate_loop_count, -1, -1):
+			// 		f = f * f * linefunc(R, R, P)
+			// 		R = double(R)
+			// 		if ate_loop_count & (2**i):
+			// 			f = f * linefunc(R, Q, P)
+			// 			R = add(R, Q)
+			// 	# assert R == multiply(Q, ate_loop_count)
+			// 	Q1 = (Q[0] ** field_modulus, Q[1] ** field_modulus)
+			// 	# assert is_on_curve(Q1, b12)
+			// 	nQ2 = (Q1[0] ** field_modulus, -Q1[1] ** field_modulus)
+			// 	# assert is_on_curve(nQ2, b12)
+			// 	f = f * linefunc(R, Q1, P)
+			// 	R = add(R, Q1)
+			// 	f = f * linefunc(R, nQ2, P)
+			// 	# R = add(R, nQ2) This line is in many specifications but it technically does nothing
+			// 	return f ** ((field_modulus ** 12 - 1) // curve_order)
+			// function miller(g1_x, g1_y, g2_ix, g1_x, g2_iy, g2_x) {
+			// 	for { let i := LOG_ATE_LOOP_COUNT() } gt(i, ZERO()) { i := sub(i, 1) } {
+			// 		f := mulFQ12()
+			// 	}
+			// }
 
-			}
-
-			function checkPairing() -> ret {
+			function checkPairing(k) -> ret {
 		  		let inputSize := calldatasize()
 				  
-				acc := ONE()
+				let acc := ONE()
 				for { let i := 0 } lt(i, inputSize) { i := add(i, PAIR_LENGTH()) } {
 					let g1_x := mload(i)
 					let g1_y := mload(add(i, 32))
@@ -171,9 +202,9 @@ object "EcPairing" {
 						continue
 					}
 
-					acc.Mul(acc, miller(g1_x, g1_y, g2_ix, g2_x, g2_iy, g2_y))
+					// acc.Mul(acc, miller(g1_x, g1_y, g2_ix, g2_x, g2_iy, g2_y))
 				}
-				return eq(finalExponentiation(acc), ONE())
+				// return eq(finalExponentiation(acc), ONE())
 			}
 
 			////////////////////////////////////////////////////////////////
