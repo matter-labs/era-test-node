@@ -14,6 +14,10 @@ object "ModExp" {
                 one := 0x1
             }
 
+            function TWO() -> two {
+                two := 0x2
+            }
+
             //////////////////////////////////////////////////////////////////
             //                      HELPER FUNCTIONS
             //////////////////////////////////////////////////////////////////
@@ -73,22 +77,22 @@ object "ModExp" {
                 return(196, modulus_length)
             }
 
-            // base^0 % modulus = 1
-            if iszero(exponent) {
-                mstore(196, ONE())
-                return(196, modulus_length)
-            }
-
             // base^exponent % 0 = 0
             if iszero(modulus) {
                 mstore(196, ZERO())
                 return(196, modulus_length)
             }
 
+            // base^0 % modulus = 1
+            if iszero(exponent) {
+                mstore(196, ONE())
+                return(196, modulus_length)
+            }
+
             let pow := 1
             base := mod(base, modulus)
             for { let i := 0 } gt(exponent, ZERO()) { i := add(i, 1) } {
-                if eq(mod(exponent, 2), ONE()) {
+                if eq(mod(exponent, TWO()), ONE()) {
                     pow := mulmod(pow, base, modulus)
                 }
                 exponent := shr(1, exponent)
