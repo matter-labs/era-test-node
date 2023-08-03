@@ -45,7 +45,7 @@ use vm::{
         init_vm_inner, push_transaction_to_bootloader_memory, BlockContext, BlockContextMode,
         BootloaderJobType, TxExecutionMode,
     },
-    HistoryEnabled, OracleTools,
+    HistoryEnabled, OracleTools, HistoryDisabled, TxRevertReason,
 };
 use zksync_web3_decl::types::{Filter, FilterChanges};
 
@@ -257,6 +257,7 @@ impl InMemoryNode {
 
     /// Runs L2 'eth call' method - that doesn't commit to a block.
     fn run_l2_call(&self, l2_tx: L2Tx) -> Vec<u8> {
+        println!("Running run_l2_call...");
         let execution_mode = TxExecutionMode::EthCall {
             missed_storage_invocation_limit: 1000000,
         };
@@ -305,6 +306,7 @@ impl InMemoryNode {
                 formatter::print_call(call, 0, &inner.show_calls, inner.resolve_hashes);
             }
         }
+        println!("run_l2_call complete");
 
         match vm_block_result.full_result.revert_reason {
             Some(result) => result.original_data,
@@ -320,13 +322,80 @@ impl InMemoryNode {
         }
     }
 
+    /// Runs L2 'eth call' method but with estimate fee execution mode.
+    fn run_l2_call_for_fee_estimate(&self, l2_tx: L2Tx, gas_limit: u32) -> Result<u32, TxRevertReason> {
+        // println!("Running run_l2_call_for_fee_estimate...");
+        let execution_mode = TxExecutionMode::EstimateFee {
+            missed_storage_invocation_limit: 1000000,
+        };
+
+        let inner = self.inner.read().unwrap();
+        let fork_storage_copy = inner.fork_storage.clone();
+        let mut storage_view = StorageView::new(&fork_storage_copy);
+
+        let mut oracle_tools = OracleTools::new(&mut storage_view, HistoryDisabled);
+
+        let bootloader_code = &inner.playground_contracts;
+
+        let block_context = inner.create_block_context();
+        let block_properties = InMemoryNodeInner::create_block_properties(bootloader_code);
+
+        // init vm
+        let mut vm = init_vm_inner(
+            &mut oracle_tools,
+            BlockContextMode::OverrideCurrent(block_context.into()),
+            &block_properties,
+            // BLOCK_GAS_LIMIT,
+            gas_limit,
+            bootloader_code,
+            execution_mode,
+        );
+
+        let tx: Transaction = l2_tx.into();
+
+        push_transaction_to_bootloader_memory(&mut vm, &tx, execution_mode, None);
+
+        let vm_block_result = vm.execute_till_block_end_with_call_tracer(BootloaderJobType::TransactionExecution);
+        // let tx_result = match vm.execute_next_tx(u32::MAX, false) {
+        //     Ok(value) => value,
+        //     Err(err) => {
+        //         println!("An error occurred: {:?}", err);
+        //         return (Default::default(), Default::default(), block, Default::default())
+        //     }
+        // };
+
+        let result = match vm_block_result.full_result.revert_reason {
+            None => {
+                println!("Found {} gas_used", vm_block_result.full_result.gas_used);
+                Ok(vm_block_result.full_result.gas_used)
+            },
+            Some(revert) => {
+                match revert.revert_reason {
+                    TxRevertReason::ValidationFailed(_) => {
+                        // This is the "unexpected signature length" error, ignoring for gas estimation
+                        return Ok(vm_block_result.full_result.gas_used)
+                    },
+                    _ => {
+                        Err(revert.revert_reason)
+                    }
+                }
+            },
+        };
+        
+        // println!("run_l2_call_for_fee_estimate complete");
+        result
+        // (vm_block_result.full_result.gas_used, None)
+        // println!("returning {} gas_used instead", ETH_CALL_GAS_LIMIT);
+        // ETH_CALL_GAS_LIMIT
+    }
+
     fn run_l2_tx_inner(
         &self,
         l2_tx: L2Tx,
         execution_mode: TxExecutionMode,
     ) -> (
         HashMap<StorageKey, H256>,
-        VmTxExecutionResult,
+        Option<VmTxExecutionResult>,
         BlockInfo,
         HashMap<U256, Vec<U256>>,
     ) {
@@ -363,7 +432,14 @@ impl InMemoryNode {
 
         let tx: Transaction = l2_tx.into();
         push_transaction_to_bootloader_memory(&mut vm, &tx, execution_mode, None);
-        let tx_result = vm.execute_next_tx(u32::MAX, true).unwrap();
+        let tx_result = match vm.execute_next_tx(u32::MAX, true) {
+            Ok(value) => value,
+            Err(err) => {
+                println!("An error occurred: {:?}", err);
+                return (Default::default(), Default::default(), block, Default::default())
+            }
+        };
+        // let tx_result = vm.execute_next_tx(u32::MAX, true).unwrap();
 
         match tx_result.status {
             TxExecutionStatus::Success => println!("Transaction: {}", "SUCCESS".green()),
@@ -419,11 +495,12 @@ impl InMemoryNode {
             .clone();
 
         let modified_keys = storage_view.modified_storage_keys().clone();
-        (modified_keys, tx_result, block, bytecodes)
+        (modified_keys, Some(tx_result), block, bytecodes)
     }
 
     /// Runs L2 transaction and commits it to a new block.
     fn run_l2_tx(&self, l2_tx: L2Tx, execution_mode: TxExecutionMode) {
+        println!("Running run_l2_tx...");
         let tx_hash = l2_tx.hash();
         println!("\nExecuting {}", format!("{:?}", tx_hash).bold());
         let (keys, result, block, bytecodes) = self.run_l2_tx_inner(l2_tx.clone(), execution_mode);
@@ -453,7 +530,7 @@ impl InMemoryNode {
                 tx: l2_tx,
                 batch_number: block.batch_number,
                 miniblock_number: current_miniblock,
-                result,
+                result: result.unwrap(),
             },
         );
         inner.blocks.insert(block.batch_number, block);
@@ -462,6 +539,7 @@ impl InMemoryNode {
             inner.current_batch += 1;
             inner.current_miniblock += 1;
         }
+        println!("run_l2_tx complete");
     }
 }
 
@@ -763,11 +841,51 @@ impl EthNamespaceT for InMemoryNode {
 
     fn estimate_gas(
         &self,
-        _req: zksync_types::transaction_request::CallRequest,
+        req: zksync_types::transaction_request::CallRequest,
         _block: Option<zksync_types::api::BlockNumber>,
     ) -> jsonrpc_core::BoxFuture<jsonrpc_core::Result<U256>> {
-        let gas_used = U256::from(ETH_CALL_GAS_LIMIT);
-        Ok(gas_used).into_boxed_future()
+        let mut tx = l2_tx_from_call_req(req, MAX_TX_SIZE).unwrap();
+        tx.common_data.fee.gas_limit = ETH_CALL_GAS_LIMIT.into();
+
+        // This needs to be greater than fair_l2_gas_price (250_000_000)
+        tx.common_data.fee.max_fee_per_gas = U256::from(250_000_000) + 1;
+
+        println!("Starting initial estimate_gas");
+        let mut temp_gas_price = BLOCK_GAS_LIMIT;
+        let mut estimate_gas_result = self.run_l2_call_for_fee_estimate(tx.clone(), temp_gas_price);
+        
+        if estimate_gas_result.is_err() {
+            // THIS CONTRACT WILL NEVER WORK...
+            println!("Initial estimate_gas FAILED!!!");
+            return Ok(U256::from(0)).into_boxed_future();
+        }
+        println!("Initial estimate_gas complete w/ no errors");
+        temp_gas_price = estimate_gas_result.unwrap();
+        println!("Initial gas used: {}", temp_gas_price);
+        
+        // 1. Run the transaction with `temp_gas_limit`
+        // 2. If it fails, `temp_gas_limit = temp_gas_limit * 1.5` and go back to **`step i`**
+        // 3. If it succeeds, use `temp_gas_limit` as the `estimated_gas`
+        let mut successful_min_gas_found = false;
+        let mut iterations = 0;
+        
+        println!("Incrementing estimate_gas calls starting...");
+        while !successful_min_gas_found && iterations < 30 {
+            temp_gas_price = ((temp_gas_price as f32) * 1.5) as u32;
+            
+            println!("Attempt {}: Trying to estimate transaction with {} gas", iterations, temp_gas_price);
+            estimate_gas_result = self.run_l2_call_for_fee_estimate(tx.clone(), temp_gas_price);
+
+            iterations += 1;
+            if estimate_gas_result.is_err() {
+                // println!("Didn't work this time...");
+            } else {
+                successful_min_gas_found = true;
+            }
+        }
+        
+        println!("Incrementing estimate_gas calls completed");
+        Ok(U256::from(temp_gas_price)).into_boxed_future()
     }
 
     fn gas_price(&self) -> jsonrpc_core::BoxFuture<jsonrpc_core::Result<U256>> {
