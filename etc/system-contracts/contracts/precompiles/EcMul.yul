@@ -141,8 +141,8 @@ object "EcMul" {
                         precompileCall(precompileParams, gasToPay)
                   }
 
-                  function isEven(x) -> ret {
-                        ret := eq(mod(x, 2), 0)
+                  function lsbIsOne(x) -> ret {
+                        ret := eq(mod(x, 2), 1)
                   }
 
                   ////////////////////////////////////////////////////////////////
@@ -196,69 +196,57 @@ object "EcMul" {
                   let y2 := y
                   let x_res := ZERO()
                   let y_res := ZERO()
-                  let aux_scalar := scalar
-                  for {} iszero(eq(aux_scalar, ZERO())) {} {
-
-                        // LSB is 0
-                        if iszero(isEven(aux_scalar)) {
+                  for {} iszero(eq(scalar, ZERO())) {} {
+                        if lsbIsOne(scalar) {
                               if and(isInfinity(x_res, y_res), isInfinity(x2, y2)) {
                                     // Infinity + Infinity = Infinity
                                     x_res := ZERO()
                                     y_res := ZERO()
-                                    // Double
+                                    
                                     x2, y2 := double(x2, y2)
-
-                                    // Check next LSB
-                                    aux_scalar := shr(1, aux_scalar)
+                                    // Check next bit
+                                    scalar := shr(1, scalar)
                                     continue
                               }
                               if and(isInfinity(x_res, y_res), iszero(isInfinity(x2, y2))) {
                                     // Infinity + P = P
-            
                                     x_res := x2
                                     y_res := y2
-                                    // Double
-                                    x2, y2 := double(x2, y2)
 
-                                    // Check next LSB
-                                    aux_scalar := shr(1, aux_scalar)
+                                    x2, y2 := double(x2, y2)
+                                    // Check next bit
+                                    scalar := shr(1, scalar)
                                     continue
                               }
                               if and(iszero(isInfinity(x_res, y_res)), isInfinity(x2, y2)) {
                                     // P + Infinity = P
 
-                                    // Check next LSB
-                                    aux_scalar := shr(1, aux_scalar)
+                                    // Check next bit
+                                    scalar := shr(1, scalar)
                                     continue
                               }
                               if and(eq(x_res, x2), eq(submod(0, y_res, ALT_BN128_GROUP_ORDER()), y2)) {
                                     // P + (-P) = Infinity
-            
                                     x_res := ZERO()
                                     y_res := ZERO()
 
-                                    // Double
                                     x2, y2 := double(x2, y2)
-
-                                    // Check next LSB
-                                    aux_scalar := shr(1, aux_scalar)
+                                    // Check next bit
+                                    scalar := shr(1, scalar)
                                     continue
                               }
                               if and(eq(x_res, x2), eq(y_res, y2)) {
                                     // P + P = 2P
-            
-                                   x_res, y_res := double(x_res, y_res)
-
-                                    // Double
+                                    x_res, y_res := double(x_res, y_res)
+                                    
                                     x2, y2 := double(x2, y2)
-
-                                    // Check next LSB
-                                    aux_scalar := shr(1, aux_scalar)
+                                    // Check next bit
+                                    scalar := shr(1, scalar)
                                     continue
                               }
 
                               // P1 + P2 = P3
-
+                              
                               // (y2 - y1) / (x2 - x1)
                               let slope := divmod(submod(y2, y_res, ALT_BN128_GROUP_ORDER()), submod(x2, x_res, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER())
                               // x3 = slope^2 - x1 - x2
@@ -270,11 +258,9 @@ object "EcMul" {
                               y_res := y3
                         }
 
-                        // Double
                         x2, y2 := double(x2, y2)
-
-                        // Check next LSB
-                        aux_scalar := shr(1, aux_scalar)
+                        // Check next bit
+                        scalar := shr(1, scalar)
                   }
 
                   mstore(0, x_res)
