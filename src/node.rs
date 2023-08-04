@@ -844,6 +844,7 @@ impl EthNamespaceT for InMemoryNode {
         
         if estimate_gas_result.is_err() {
             // There's a normal execution error
+            println!("Call failed with maximum gas provided");
             return Err(Error {
                 code: jsonrpc_core::ErrorCode::ServerError(0),
                 message: "Estimate failed even with maximum possible gas".to_string(),
