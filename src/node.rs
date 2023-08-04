@@ -9,10 +9,11 @@ use crate::{
 };
 
 use colored::Colorize;
+use jsonrpc_core::Error;
 use std::{
     collections::HashMap,
     convert::TryInto,
-    sync::{Arc, RwLock},
+    sync::{Arc, RwLock}, cmp::min,
 };
 use zksync_basic_types::{AccountTreeId, Bytes, H160, H256, U256, U64};
 use zksync_contracts::{
@@ -322,9 +323,8 @@ impl InMemoryNode {
         }
     }
 
-    /// Runs L2 'eth call' method but with estimate fee execution mode.
+    /// Runs L2 'eth call' method but with estimate fee execution mode against a sandbox vm.
     fn run_l2_call_for_fee_estimate(&self, l2_tx: L2Tx, gas_limit: u32) -> Result<u32, TxRevertReason> {
-        // println!("Running run_l2_call_for_fee_estimate...");
         let execution_mode = TxExecutionMode::EstimateFee {
             missed_storage_invocation_limit: 1000000,
         };
@@ -345,7 +345,6 @@ impl InMemoryNode {
             &mut oracle_tools,
             BlockContextMode::OverrideCurrent(block_context.into()),
             &block_properties,
-            // BLOCK_GAS_LIMIT,
             gas_limit,
             bootloader_code,
             execution_mode,
@@ -355,14 +354,7 @@ impl InMemoryNode {
 
         push_transaction_to_bootloader_memory(&mut vm, &tx, execution_mode, None);
 
-        let vm_block_result = vm.execute_till_block_end_with_call_tracer(BootloaderJobType::TransactionExecution);
-        // let tx_result = match vm.execute_next_tx(u32::MAX, false) {
-        //     Ok(value) => value,
-        //     Err(err) => {
-        //         println!("An error occurred: {:?}", err);
-        //         return (Default::default(), Default::default(), block, Default::default())
-        //     }
-        // };
+        let vm_block_result = vm.execute_till_block_end(BootloaderJobType::TransactionExecution);
 
         let result = match vm_block_result.full_result.revert_reason {
             None => {
@@ -382,11 +374,7 @@ impl InMemoryNode {
             },
         };
         
-        // println!("run_l2_call_for_fee_estimate complete");
         result
-        // (vm_block_result.full_result.gas_used, None)
-        // println!("returning {} gas_used instead", ETH_CALL_GAS_LIMIT);
-        // ETH_CALL_GAS_LIMIT
     }
 
     fn run_l2_tx_inner(
@@ -850,42 +838,65 @@ impl EthNamespaceT for InMemoryNode {
         // This needs to be greater than fair_l2_gas_price (250_000_000)
         tx.common_data.fee.max_fee_per_gas = U256::from(250_000_000) + 1;
 
-        println!("Starting initial estimate_gas");
+        // Running initial gas estimate with max amount to deduce if there's a normal execution error
         let mut temp_gas_price = BLOCK_GAS_LIMIT;
         let mut estimate_gas_result = self.run_l2_call_for_fee_estimate(tx.clone(), temp_gas_price);
         
         if estimate_gas_result.is_err() {
-            // THIS CONTRACT WILL NEVER WORK...
-            println!("Initial estimate_gas FAILED!!!");
-            return Ok(U256::from(0)).into_boxed_future();
+            // There's a normal execution error
+            return Err(Error {
+                code: jsonrpc_core::ErrorCode::ServerError(0),
+                message: "Estimate failed even with maximum possible gas".to_string(),
+                data: None,
+            }).into_boxed_future();
         }
-        println!("Initial estimate_gas complete w/ no errors");
         temp_gas_price = estimate_gas_result.unwrap();
         println!("Initial gas used: {}", temp_gas_price);
-        
-        // 1. Run the transaction with `temp_gas_limit`
-        // 2. If it fails, `temp_gas_limit = temp_gas_limit * 1.5` and go back to **`step i`**
-        // 3. If it succeeds, use `temp_gas_limit` as the `estimated_gas`
-        let mut successful_min_gas_found = false;
-        let mut iterations = 0;
-        
-        println!("Incrementing estimate_gas calls starting...");
-        while !successful_min_gas_found && iterations < 30 {
-            temp_gas_price = ((temp_gas_price as f32) * 1.5) as u32;
-            
-            println!("Attempt {}: Trying to estimate transaction with {} gas", iterations, temp_gas_price);
-            estimate_gas_result = self.run_l2_call_for_fee_estimate(tx.clone(), temp_gas_price);
 
-            iterations += 1;
+
+        ///// For L2 transactions we need a properly formatted signature
+        // if let ExecuteTransactionCommon::L2(l2_common_data) = &mut tx.common_data {
+        //     if l2_common_data.signature.is_empty() {
+        //         l2_common_data.signature = vec![0u8; 65];
+        //         l2_common_data.signature[64] = 27;
+        //     }
+
+        //     l2_common_data.fee.gas_per_pubdata_limit = MAX_GAS_PER_PUBDATA_BYTE.into();
+        // }
+
+
+
+        // We are using binary search to find the minimal values of gas_limit under which
+        // the transaction succeedes
+        let mut lower_bound = temp_gas_price;
+        let mut upper_bound = ETH_CALL_GAS_LIMIT as u32;
+        let acceptable_overestimation = 1_000;
+        let max_attempts = 30usize;
+
+        println!("Trying binary search with lower_bound: {}, and upper_bound: {}", lower_bound, upper_bound);
+        let mut number_of_iterations = 0usize;
+        while lower_bound + acceptable_overestimation < upper_bound && number_of_iterations < max_attempts{
+            let mid = (lower_bound + upper_bound) / 2;
+            let try_gas_limit = acceptable_overestimation + mid;
+            estimate_gas_result = self.run_l2_call_for_fee_estimate(tx.clone(), try_gas_limit);
             if estimate_gas_result.is_err() {
-                // println!("Didn't work this time...");
+                lower_bound = mid + 1;
+                println!("Attempt {}: Failed, trying again with lower_bound: {}, and upper_bound: {}", number_of_iterations, lower_bound, upper_bound);
             } else {
-                successful_min_gas_found = true;
+                upper_bound = mid;
+                println!("Attempt {}: Succeeded, trying again with lower_bound: {}, and upper_bound: {}", number_of_iterations, lower_bound, upper_bound);
+                println!("Gas Used: {}", estimate_gas_result.unwrap())
             }
+            
+            number_of_iterations += 1;
         }
         
-        println!("Incrementing estimate_gas calls completed");
-        Ok(U256::from(temp_gas_price)).into_boxed_future()
+        println!("COMPLETE after {} attempts and with lower_bound: {}, and upper_bound: {}", number_of_iterations, lower_bound, upper_bound);
+        let mut estimation_value = ((upper_bound + acceptable_overestimation) as f32 * 1.3) as u32;
+
+        estimation_value = min(ETH_CALL_GAS_LIMIT as u32, estimation_value);
+        println!("VALUE RETURNING: {}", estimation_value);
+        Ok(U256::from(estimation_value)).into_boxed_future()
     }
 
     fn gas_price(&self) -> jsonrpc_core::BoxFuture<jsonrpc_core::Result<U256>> {
