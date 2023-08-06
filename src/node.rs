@@ -662,7 +662,11 @@ impl EthNamespaceT for InMemoryNode {
             match inner.write() {
                 Ok(mut guard) => {
                     let code_hash = guard.fork_storage.read_value(&code_key);
-                    Ok(Bytes::from(code_hash.as_bytes()))
+                    let code = guard
+                        .fork_storage
+                        .load_factory_dep_internal(code_hash)
+                        .unwrap_or_default();
+                    Ok(Bytes::from(code))
                 }
                 Err(_) => Err(into_jsrpc_error(Web3Error::InternalError)),
             }
