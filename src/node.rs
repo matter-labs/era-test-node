@@ -225,7 +225,7 @@ impl InMemoryNode {
                 l1_gas_price: fork
                     .as_ref()
                     .map(|f| f.l1_gas_price)
-                    .unwrap_or(50_000_000_000),
+                    .unwrap_or(1_000_000_000),
                 tx_results: Default::default(),
                 blocks: Default::default(),
                 fork_storage: ForkStorage::new(fork, dev_use_local_contracts),
