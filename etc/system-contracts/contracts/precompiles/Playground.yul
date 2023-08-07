@@ -14,8 +14,24 @@ object "Playground" {
                 one := 0x1
             }
 
+            function TWO() -> two {
+                two := 0x2
+            }
+
             function THREE() -> three {
                 three := 0x3
+            }
+
+            function MONTGOMERY_ONE() -> m_one {
+                m_one := 15537367993719455909907449462855742678907882278146377936676643359958227611562
+            }
+
+            function MONTGOMERY_TWO() -> m_two {
+                m_two := 9186493115599636597568493180454210269119453398994932210664248825271229014541
+            }
+
+            function MONTGOMERY_THREE() -> m_three {
+                m_three := 2835618237479817285229536898052677859331024519843486484651854290584230417520
             }
 
             // Group order of alt_bn128, see https://eips.ethereum.org/EIPS/eip-196
@@ -91,6 +107,25 @@ object "Playground" {
                 ret := REDC(lowest_half_of_product, higher_half_of_product)
             }
 
+            function montgomeryModExp(
+                base,
+                exponent
+            ) -> pow {
+                pow := MONTGOMERY_ONE()
+                let aux_exponent := exponent
+                for { } gt(aux_exponent, ZERO()) { } {
+                    if mod(aux_exponent, 2) {
+                            pow := montgomeryMul(pow, base)
+                    }
+                    aux_exponent := shr(1, aux_exponent)
+                    base := montgomeryMul(base, base)
+                }
+            }
+
+            function montgomeryDiv(dividend, divisor) -> quotient {
+                quotient := montgomeryMul(dividend, montgomeryModExp(divisor, sub(ALT_BN128_GROUP_ORDER(), TWO())))
+            }
+
             let a := THREE()
             let a_mont := intoMontgomeryForm(a)
 
@@ -117,6 +152,24 @@ object "Playground" {
             console_log(0x1c0, prod_mont)
             // a * a in montgomery form into montgomery form
             console_log(0x200, outOfMontgomeryForm(prod_mont))
+        
+            /* Modular Exponentiation */
+            let pow_mont := montgomeryModExp(a_mont, 3)
+            console_log(0x240, mul(a, mul(a, a)))
+            // a ** 3 in montgomery form
+            console_log(0x280, pow_mont)
+            // a ** 3 in montgomery form into montgomery form
+            console_log(0x2c0, outOfMontgomeryForm(pow_mont))
+
+            /* Modular Inverse */
+            console_log(0x300, div(a, a))
+            let a_inv_mont := montgomeryModExp(a_mont, sub(ALT_BN128_GROUP_ORDER(), TWO()))
+            console_log(0x340, a_inv_mont)
+            // a ** 3 in montgomery form
+            let div_mont := montgomeryMul(a_mont, a_inv_mont)
+            console_log(0x380, div_mont)
+            // a ** 3 in montgomery form into montgomery form
+            console_log(0x3c0, outOfMontgomeryForm(div_mont))
         }
     }
 }
