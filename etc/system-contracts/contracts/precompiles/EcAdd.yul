@@ -14,6 +14,10 @@ object "EcAdd" {
                         one := 0x1
                   }
 
+                  function THREE_MONTGOMERY() -> three_mont {
+                        three_mont := intoMontgomeryForm(0x3)
+                  }
+
                   // Group order of alt_bn128, see https://eips.ethereum.org/EIPS/eip-196
                   function ALT_BN128_GROUP_ORDER() -> ret {
                         ret := 21888242871839275222246405745257275088696311157297823662689037894645226208583
@@ -131,44 +135,44 @@ object "EcAdd" {
                         overflowed := or(gt(difference, minuend), gt(difference, subtrahend))
                     }
         
-                    function getHighestHalfOfMultiplication(multiplicand, multiplier) -> ret {
+                  function getHighestHalfOfMultiplication(multiplicand, multiplier) -> ret {
                         ret := verbatim_2i_1o("mul_high", multiplicand, multiplier)
-                    }
-        
-                    // https://en.wikipedia.org/wiki/Montgomery_modular_multiplication//The_REDC_algorithm
-                    function REDC(lowest_half_of_T, higher_half_of_T) -> S {
+                  }
+
+                  // https://en.wikipedia.org/wiki/Montgomery_modular_multiplication//The_REDC_algorithm
+                  function REDC(lowest_half_of_T, higher_half_of_T) -> S {
                         let q := mul(lowest_half_of_T, ALT_BN128_GROUP_ORDER_INVERSE())
                         let a_high := sub(getHighestHalfOfMultiplication(q, ALT_BN128_GROUP_ORDER()), higher_half_of_T)
                         let a_low, overflowed := overflowingSub(lowest_half_of_T, mul(q, ALT_BN128_GROUP_ORDER()))
                         if overflowed {
-                            a_high := sub(a_high, ONE())
+                        a_high := sub(a_high, ONE())
                         }
                         S := a_high
                         if or(gt(a_high, ALT_BN128_GROUP_ORDER()), eq(a_high, ALT_BN128_GROUP_ORDER())) {
-                            S := sub(a_high, ALT_BN128_GROUP_ORDER())
+                        S := sub(a_high, ALT_BN128_GROUP_ORDER())
                         }
-                    }
+                  }
         
-                    // Transforming into the Montgomery form -> REDC((a mod N)(R2 mod N))
-                    function intoMontgomeryForm(a) -> ret {
-                            let higher_half_of_a := getHighestHalfOfMultiplication(mod(a, ALT_BN128_GROUP_ORDER()), R2_mod_ALT_BN128_GROUP_ORDER())
-                            let lowest_half_of_a := mul(mod(a, ALT_BN128_GROUP_ORDER()), R2_mod_ALT_BN128_GROUP_ORDER())
-                            ret := REDC(lowest_half_of_a, higher_half_of_a)
-                    }
+                  // Transforming into the Montgomery form -> REDC((a mod N)(R2 mod N))
+                  function intoMontgomeryForm(a) -> ret {
+                        let higher_half_of_a := getHighestHalfOfMultiplication(mod(a, ALT_BN128_GROUP_ORDER()), R2_mod_ALT_BN128_GROUP_ORDER())
+                        let lowest_half_of_a := mul(mod(a, ALT_BN128_GROUP_ORDER()), R2_mod_ALT_BN128_GROUP_ORDER())
+                        ret := REDC(lowest_half_of_a, higher_half_of_a)
+                  }
         
-                    // Transforming out of the Montgomery form -> REDC(a * R mod N)
-                    function outOfMontgomeryForm(m) -> ret {
-                            let higher_half_of_m := ZERO()
-                            let lowest_half_of_m := m 
-                            ret := REDC(lowest_half_of_m, higher_half_of_m)
-                    }
+                  // Transforming out of the Montgomery form -> REDC(a * R mod N)
+                  function outOfMontgomeryForm(m) -> ret {
+                        let higher_half_of_m := ZERO()
+                        let lowest_half_of_m := m 
+                        ret := REDC(lowest_half_of_m, higher_half_of_m)
+                  }
         
-                    // Multipling field elements in Montgomery form -> REDC((a * R mod N)(b * R mod N))
-                    function montgomeryMul(multiplicand, multiplier) -> ret {
-                        let higher_half_of_product := getHighestHalfOfMultiplication(multiplicand, multiplier)
-                        let lowest_half_of_product := mul(multiplicand, multiplier)
-                        ret := REDC(lowest_half_of_product, higher_half_of_product)
-                    }
+                  // Multipling field elements in Montgomery form -> REDC((a * R mod N)(b * R mod N))
+                  function montgomeryMul(multiplicand, multiplier) -> ret {
+                  let higher_half_of_product := getHighestHalfOfMultiplication(multiplicand, multiplier)
+                  let lowest_half_of_product := mul(multiplicand, multiplier)
+                  ret := REDC(lowest_half_of_product, higher_half_of_product)
+                  }
 
                   ////////////////////////////////////////////////////////////////
                   //                      FALLBACK
@@ -238,6 +242,8 @@ object "EcAdd" {
                         revert(0, 0)
                   }
 
+                  // There's no need for transforming into Montgomery form
+                  // for this case.
                   if and(eq(x1, x2), eq(submod(0, y1, ALT_BN128_GROUP_ORDER()), y2)) {
                         // P + (-P) = Infinity
 
@@ -245,23 +251,31 @@ object "EcAdd" {
                         mstore(32, ZERO())
                         return(0, 64)
                   }
+                  // There's no need for transforming into Montgomery form
+                  // for this case.
+                  if and(eq(x1, x2), and(iszero(eq(y1, y2)), iszero(eq(y1, submod(0, y2, ALT_BN128_GROUP_ORDER()))))) {
+                        burnGas()
+                        revert(0, 0)
+                  }
+
+                  x1 := intoMontgomeryForm(x1)
+                  y1 := intoMontgomeryForm(y1)
+                  x2 := intoMontgomeryForm(x2)
+                  y2 := intoMontgomeryForm(y2)
+
                   if and(eq(x1, x2), eq(y1, y2)) {
                         // P + P = 2P
 
                         // (3 * x1^2 + a) / (2 * y1)
-                        let slope := divmod(mulmod(3, mulmod(x1, x1, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER()), addmod(y1, y1, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER())
+                        let slope := divmod(montgomeryMul(THREE_MONTGOMERY(), montgomeryMul(x1, x1)), addmod(y1, y1, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER())
                         // x3 = slope^2 - 2 * x1
-                        let x3 := submod(mulmod(slope, slope, ALT_BN128_GROUP_ORDER()), addmod(x1, x1, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER())
+                        let x3 := submod(montgomeryMul(slope, slope), addmod(x1, x1, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER())
                         // y3 = slope * (x1 - x3) - y1
-                        let y3 := submod(mulmod(slope, submod(x1, x3, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER()), y1, ALT_BN128_GROUP_ORDER())
+                        let y3 := submod(montgomeryMul(slope, submod(x1, x3, ALT_BN128_GROUP_ORDER())), y1, ALT_BN128_GROUP_ORDER())
 
                         mstore(0, x3)
                         mstore(32, y3)
                         return(0, 64)
-                  }
-                  if and(eq(x1, x2), and(iszero(eq(y1, y2)), iszero(eq(y1, submod(0, y2, ALT_BN128_GROUP_ORDER()))))) {
-                        burnGas()
-                        revert(0, 0)
                   }
 
                   // P1 + P2 = P3
@@ -269,9 +283,9 @@ object "EcAdd" {
                   // (y2 - y1) / (x2 - x1)
                   let slope := divmod(submod(y2, y1, ALT_BN128_GROUP_ORDER()), submod(x2, x1, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER())
                   // x3 = slope^2 - x1 - x2
-                  let x3 := submod(mulmod(slope, slope, ALT_BN128_GROUP_ORDER()), addmod(x1, x2, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER())
+                  let x3 := submod(montgomeryMul(slope, slope), addmod(x1, x2, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER())
                   // y3 = slope * (x1 - x3) - y1
-                  let y3 := submod(mulmod(slope, submod(x1, x3, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER()), y1, ALT_BN128_GROUP_ORDER())
+                  let y3 := submod(montgomeryMul(slope, submod(x1, x3, ALT_BN128_GROUP_ORDER())), y1, ALT_BN128_GROUP_ORDER())
 
                   mstore(0, x3)
                   mstore(32, y3)
