@@ -24,7 +24,7 @@ use vm::{
     },
     HistoryEnabled, OracleTools,
 };
-use zksync_basic_types::{AccountTreeId, Bytes, H160, H256, U256, U64};
+use zksync_basic_types::{web3::signing::keccak256, AccountTreeId, Bytes, H160, H256, U256, U64};
 use zksync_contracts::{
     read_playground_block_bootloader_bytecode, read_sys_contract_bytecode, BaseSystemContracts,
     ContractLanguage, SystemContractCode,
@@ -59,6 +59,8 @@ pub const MAX_TX_SIZE: usize = 1000000;
 pub const NON_FORK_FIRST_BLOCK_TIMESTAMP: u64 = 1000;
 /// Network ID we use for the test node.
 pub const TEST_NODE_NETWORK_ID: u16 = 260;
+/// L2 Gas price (0.25 gwei)
+pub const FAIR_L2_GAS_PRICE: u64 = 250_000_000;
 
 /// Basic information about the generated block (which is block l1 batch and miniblock).
 /// Currently, this test node supports exactly one transaction per block.
@@ -114,7 +116,7 @@ impl InMemoryNodeInner {
             block_number: self.current_batch,
             block_timestamp: self.current_timestamp,
             l1_gas_price: self.l1_gas_price,
-            fair_l2_gas_price: 250_000_000, // 0.25 gwei
+            fair_l2_gas_price: FAIR_L2_GAS_PRICE,
             operator_address: H160::zero(),
         }
     }
@@ -620,8 +622,25 @@ impl EthNamespaceT for InMemoryNode {
                 zksync_types::api::BlockNumber::Number(ask_number)
                     if ask_number != U64::from(reader.current_miniblock) =>
                 {
-                    println!("Method get_block_by_number with BlockNumber::Number({}) is not implemented", ask_number);
-                    return Err(into_jsrpc_error(Web3Error::NotImplemented));
+                    if _full_transactions {
+                        println!("!!! Asking for full transactoin of {}", ask_number);
+                    }
+                    let block = reader.blocks.get(&ask_number.as_u32()).map(|block_info| {
+                        zksync_types::api::Block {
+                            hash: H256(keccak256(&ask_number.0[0].to_le_bytes())),
+                            parent_hash: H256(keccak256(
+                                &ask_number.saturating_sub(U64([1])).0[0].to_le_bytes(),
+                            )),
+                            transactions: vec![TransactionVariant::Hash(block_info.tx_hash)],
+                            number: ask_number,
+                            l1_batch_number: Some(ask_number),
+                            gas_limit: U256::from(ETH_CALL_GAS_LIMIT),
+                            ..Default::default()
+                        }
+                    });
+                    return Ok(block);
+                    //println!("Method get_block_by_number with BlockNumber::Number({}) is not implemented", ask_number);
+                    //return Err(into_jsrpc_error(Web3Error::NotImplemented));
                 }
                 _ => {}
             }
@@ -723,6 +742,7 @@ impl EthNamespaceT for InMemoryNode {
             let tx_result = reader.tx_results.get(&hash);
 
             let receipt = tx_result.map(|info| TransactionReceipt {
+                root: Some(H256(keccak256(hash.as_bytes()))),
                 transaction_hash: hash,
                 transaction_index: U64::from(1),
                 block_hash: Some(hash),
@@ -916,7 +936,7 @@ impl EthNamespaceT for InMemoryNode {
                     from: Some(info.tx.initiator_account()),
                     to: Some(info.tx.recipient_account()),
                     value: info.tx.execute.value,
-                    gas_price: Default::default(),
+                    gas_price: Some(FAIR_L2_GAS_PRICE.into()),
                     gas: Default::default(),
                     input: input_data.data.into(),
                     v: Some(chain_id.into()),
