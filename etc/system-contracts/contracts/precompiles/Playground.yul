@@ -63,9 +63,9 @@ object "Playground" {
                 }
             }
 
-            function overflowingSub(minuend, subtrahend) -> difference, overflowed {
-                difference := sub(minuend, subtrahend)
-                overflowed := or(gt(difference, minuend), gt(difference, subtrahend))
+            function overflowingAdd(augend, addend) -> sum, overflowed {
+                sum := add(augend, addend)
+                overflowed := or(lt(sum, augend), lt(sum, addend))
             }
 
             function getHighestHalfOfMultiplication(multiplicand, multiplier) -> ret {
