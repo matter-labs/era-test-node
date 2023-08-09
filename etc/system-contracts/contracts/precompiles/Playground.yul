@@ -154,7 +154,7 @@ object "Playground" {
             }
 
             function montgomeryDiv(dividend, divisor) -> quotient {
-                quotient := montgomeryMul(dividend, montgomeryModExp(divisor, sub(ALT_BN128_GROUP_ORDER(), TWO())))
+                quotient := montgomeryMul(dividend, montgomeryModularInverse(divisor))
             }
 
             let N := ALT_BN128_GROUP_ORDER()
@@ -206,7 +206,7 @@ object "Playground" {
             // a // a
             console_log(0x400, div(a, a))
             // a // a in montgomery form
-            let div_mont := montgomeryMul(a_mont, a_inv_mont)
+            let div_mont := montgomeryDiv(a_mont, a_mont)
             console_log(0x440, div_mont)
             // a // a out of montgomery form
             console_log(0x480, outOfMontgomeryForm(div_mont))
