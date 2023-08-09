@@ -74,14 +74,14 @@ object "Playground" {
 
             // https://en.wikipedia.org/wiki/Montgomery_modular_multiplication//The_REDC_algorithm
             function REDC(lowest_half_of_T, higher_half_of_T) -> S {
-                let q := mul(lowest_half_of_T, ALT_BN128_GROUP_ORDER_INVERSE())
-                let a_high := sub(getHighestHalfOfMultiplication(q, ALT_BN128_GROUP_ORDER()), higher_half_of_T)
-                let a_low, overflowed := overflowingSub(lowest_half_of_T, mul(q, ALT_BN128_GROUP_ORDER()))
+                let q := mul(lowest_half_of_T, N_PRIME())
+                let a_high := add(higher_half_of_T, getHighestHalfOfMultiplication(q, ALT_BN128_GROUP_ORDER()))
+                let a_low, overflowed := overflowingAdd(lowest_half_of_T, mul(q, ALT_BN128_GROUP_ORDER()))
                 if overflowed {
-                    a_high := sub(a_high, ONE())
+                    a_high := add(a_high, ONE())
                 }
                 S := a_high
-                if or(gt(a_high, ALT_BN128_GROUP_ORDER()), eq(a_high, ALT_BN128_GROUP_ORDER())) {
+                if iszero(lt(a_high, ALT_BN128_GROUP_ORDER())) {
                     S := sub(a_high, ALT_BN128_GROUP_ORDER())
                 }
             }
