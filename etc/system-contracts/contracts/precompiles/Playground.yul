@@ -157,6 +157,7 @@ object "Playground" {
                 quotient := montgomeryMul(dividend, montgomeryModExp(divisor, sub(ALT_BN128_GROUP_ORDER(), TWO())))
             }
 
+            let N := ALT_BN128_GROUP_ORDER()
             let a := THREE()
             let a_mont := intoMontgomeryForm(a)
 
@@ -168,8 +169,8 @@ object "Playground" {
             console_log(0x80, outOfMontgomeryForm(a_mont))
 
             /* Addition */
-            let sum_mont := addmod(a_mont, a_mont, ALT_BN128_GROUP_ORDER())
-            console_log(0xc0, add(a, a))
+            let sum_mont := addmod(a_mont, a_mont, N)
+            console_log(0xc0, addmod(a, a, N))
             // a * a in montgomery form
             console_log(0x100, sum_mont)
             // a * a in montgomery form into montgomery form
@@ -178,7 +179,7 @@ object "Playground" {
             /* Multiplication */
 
             let prod_mont := montgomeryMul(a_mont, a_mont)
-            console_log(0x180, mul(a, a))
+            console_log(0x180, mulmod(a, a, N))
             // a * a in montgomery form
             console_log(0x1c0, prod_mont)
             // a * a in montgomery form into montgomery form
@@ -186,21 +187,29 @@ object "Playground" {
         
             /* Modular Exponentiation */
             let pow_mont := montgomeryModExp(a_mont, 3)
-            console_log(0x240, mul(a, mul(a, a)))
+            console_log(0x240, mulmod(a, mulmod(a, a, N), N))
             // a ** 3 in montgomery form
             console_log(0x280, pow_mont)
             // a ** 3 in montgomery form into montgomery form
             console_log(0x2c0, outOfMontgomeryForm(pow_mont))
 
             /* Modular Inverse */
-            console_log(0x300, div(a, a))
-            let a_inv_mont := montgomeryModExp(a_mont, sub(ALT_BN128_GROUP_ORDER(), TWO()))
+            // a^-1
+            console_log(0x300, invmod(a, N))
+            let a_inv_mont := montgomeryModularInverse(a_mont)
+            // a^-1 into montgomery form
             console_log(0x340, a_inv_mont)
-            // a ** 3 in montgomery form
+            // a^-1 out of montgomery form
+            console_log(0x3c0, outOfMontgomeryForm(a_inv_mont))
+
+            /* Division */
+            // a // a
+            console_log(0x400, div(a, a))
+            // a // a in montgomery form
             let div_mont := montgomeryMul(a_mont, a_inv_mont)
-            console_log(0x380, div_mont)
-            // a ** 3 in montgomery form into montgomery form
-            console_log(0x3c0, outOfMontgomeryForm(div_mont))
+            console_log(0x440, div_mont)
+            // a // a out of montgomery form
+            console_log(0x480, outOfMontgomeryForm(div_mont))
         }
     }
 }
