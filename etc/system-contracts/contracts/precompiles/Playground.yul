@@ -39,7 +39,7 @@ object "Playground" {
                 ret := 21888242871839275222246405745257275088696311157297823662689037894645226208583
             }
 
-            function R2_mod_ALT_BN128_GROUP_ORDER() -> ret {
+            function R2_MOD_ALT_BN128_GROUP_ORDER() -> ret {
                 ret := 3096616502983703923843567936837374451735540968419076528771170197431451843209
             }
 
@@ -108,8 +108,8 @@ object "Playground" {
 
             // Transforming into the Montgomery form -> REDC((a mod N)(R2 mod N))
             function intoMontgomeryForm(a) -> ret {
-                    let higher_half_of_a := getHighestHalfOfMultiplication(mod(a, ALT_BN128_GROUP_ORDER()), R2_mod_ALT_BN128_GROUP_ORDER())
-                    let lowest_half_of_a := mul(mod(a, ALT_BN128_GROUP_ORDER()), R2_mod_ALT_BN128_GROUP_ORDER())
+                    let higher_half_of_a := getHighestHalfOfMultiplication(mod(a, ALT_BN128_GROUP_ORDER()), R2_MOD_ALT_BN128_GROUP_ORDER())
+                    let lowest_half_of_a := mul(mod(a, ALT_BN128_GROUP_ORDER()), R2_MOD_ALT_BN128_GROUP_ORDER())
                     ret := REDC(lowest_half_of_a, higher_half_of_a)
             }
 
