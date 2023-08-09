@@ -63,6 +63,26 @@ object "Playground" {
                 }
             }
 
+            function invmod(base, modulus) -> inv {
+                inv := powmod(base, sub(modulus, TWO()), modulus)
+            }
+
+            function powmod(
+                base,
+                exponent,
+                modulus,
+            ) -> pow {
+                pow := 1
+                let aux_exponent := exponent
+                for { } gt(aux_exponent, ZERO()) { } {
+                    if mod(aux_exponent, TWO()) {
+                        pow := mulmod(pow, base, modulus)
+                    }
+                    aux_exponent := shr(1, aux_exponent)
+                    base := mulmod(base, base, modulus)
+                }
+            }
+
             function overflowingAdd(augend, addend) -> sum, overflowed {
                 sum := add(augend, addend)
                 overflowed := or(lt(sum, augend), lt(sum, addend))
