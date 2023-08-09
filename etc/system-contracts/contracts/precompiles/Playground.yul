@@ -23,15 +23,15 @@ object "Playground" {
             }
 
             function MONTGOMERY_ONE() -> m_one {
-                m_one := 15537367993719455909907449462855742678907882278146377936676643359958227611562
+                m_one := 6350874878119819312338956282401532409788428879151445726012394534686998597021
             }
 
             function MONTGOMERY_TWO() -> m_two {
-                m_two := 9186493115599636597568493180454210269119453398994932210664248825271229014541
+                m_two := 12701749756239638624677912564803064819576857758302891452024789069373997194042
             }
 
             function MONTGOMERY_THREE() -> m_three {
-                m_three := 2835618237479817285229536898052677859331024519843486484651854290584230417520
+                m_three := 19052624634359457937016868847204597229365286637454337178037183604060995791063
             }
 
             // Group order of alt_bn128, see https://eips.ethereum.org/EIPS/eip-196
@@ -138,8 +138,8 @@ object "Playground" {
                 pow := MONTGOMERY_ONE()
                 let aux_exponent := exponent
                 for { } gt(aux_exponent, ZERO()) { } {
-                    if mod(aux_exponent, 2) {
-                            pow := montgomeryMul(pow, base)
+                    if mod(aux_exponent, TWO()) {
+                        pow := montgomeryMul(pow, base)
                     }
                     aux_exponent := shr(1, aux_exponent)
                     base := montgomeryMul(base, base)
