@@ -122,6 +122,13 @@ object "Playground" {
                 }
             }
 
+            function montgomeryModularInverse(a) -> invmod {
+                let a_inv := invmod(a, ALT_BN128_GROUP_ORDER())
+                let higher_half_of_inverse := getHighestHalfOfMultiplication(a_inv, R3_MOD_ALT_BN128_GROUP_ORDER())
+                let lowest_half_of_inverse := mul(a_inv, R3_MOD_ALT_BN128_GROUP_ORDER())
+                invmod := REDC(lowest_half_of_inverse, higher_half_of_inverse)
+            }
+
             function montgomeryDiv(dividend, divisor) -> quotient {
                 quotient := montgomeryMul(dividend, montgomeryModExp(divisor, sub(ALT_BN128_GROUP_ORDER(), TWO())))
             }
