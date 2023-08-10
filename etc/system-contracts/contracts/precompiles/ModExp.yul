@@ -45,31 +45,51 @@ object "ModExp" {
                 ret := verbatim_2i_1o("precompile", precompileParams, gasToBurn)
             }
 
+            function exponentIsZero(exponent_limbs, exponent_pointer) -> isZero {
+                isZero := 0x00
+                for { let limb_number := 0 } lt(limb_number, exponent_limbs) { limb_number := add(limb_number, ONE()) } {
+                    let limb := mload(add(exponent_pointer, mul(32, limb_number)))
+                    isZero := or(isZero, limb)
+                    if isZero {
+                        break
+                    }
+                }
+                isZero := iszero(isZero)
+            }
+
             ////////////////////////////////////////////////////////////////
             //                      FALLBACK
             ////////////////////////////////////////////////////////////////
 
+            let calldataSize := calldatasize() 
+            calldatacopy(0, 0, calldataSize)
+
             let base_length := calldataload(0)
-            mstore(0, base_length)
-
             let exponent_length := calldataload(32)
-            mstore(32, exponent_length)
-
             let modulus_length := calldataload(64)
-            mstore(64, modulus_length)
 
-            let base_length_pointer := 96
-            calldatacopy(add(96, sub(32, base_length)), base_length_pointer, base_length)
+            let base_pointer := 96
+            calldatacopy(add(96, sub(32, base_length)), base_pointer, base_length)
             
-            let exponent_length_pointer := add(base_length_pointer, base_length)
-            calldatacopy(add(128, sub(32, exponent_length)), exponent_length_pointer, exponent_length)
+            let exponent_pointer := add(base_pointer, base_length)
+            let exponent_limbs := add(div(exponent_length, 32), ONE())
+            for { let limb_number := 0 } lt(limb_number, exponent_limbs) { limb_number := add(limb_number, ONE()) } {
+                // The msb of the left most limb could be one.
+                if iszero(limb_number) {
+                    let first_limb_length := add(exponent_pointer, sub(mul(32, exponent_limbs), 32))
+                    calldatacopy(first_limb_length, first_limb_length, 32)
+                    exponent_pointer := add(exponent_pointer, 32)
+                    continue
+                }
+                calldatacopy(exponent_pointer, exponent_pointer, 32)
+                exponent_pointer := add(exponent_pointer, 32)
+            }
             
-            let modulus_length_pointer := add(exponent_length_pointer, exponent_length)
-            calldatacopy(add(160, sub(32, modulus_length)), modulus_length_pointer, modulus_length)
-            
-            let base := mload(96)
-            let exponent := mload(128)
-            let modulus := mload(160)
+            let modulus_pointer := add(exponent_pointer, exponent_length)
+            calldatacopy(add(160, sub(32, modulus_length)), modulus_pointer, modulus_length)
+
+            let base := mload(base_pointer)
+            let modulus := mload(modulus_pointer)
 
             // 1^exponent % modulus = 1
             if eq(base, ONE()) {
@@ -84,7 +104,7 @@ object "ModExp" {
             }
 
             // base^0 % modulus = 1
-            if iszero(exponent) {
+            if exponentIsZero(exponent_length, add(base_pointer, base_length)) {
                 mstore(192, ONE())
                 return(sub(add(192, 32), modulus_length), modulus_length)
             }
@@ -95,18 +115,40 @@ object "ModExp" {
                 return(sub(add(192, 32), modulus_length), modulus_length)
             }
 
-            let pow := 1
-            base := mod(base, modulus)
-            for { let i := 0 } gt(exponent, ZERO()) { i := add(i, 1) } {
-                if eq(mod(exponent, TWO()), ONE()) {
-                    pow := mulmod(pow, base, modulus)
+            if eq(exponent_limbs, ONE()) {
+                let pow := 1
+
+                // We save the exponent from calldataSize pointer
+                calldatacopy(calldataSize, add(add(96, base_length), sub(32, exponent_length)), calldataSize)
+                let exponent := mload(calldataSize)
+
+                base := mod(base, modulus)
+                for { let i := 0 } gt(exponent, ZERO()) { i := add(i, 1) } {
+                    if eq(mod(exponent, TWO()), ONE()) {
+                        pow := mulmod(pow, base, modulus)
+                    }
+                    exponent := shr(1, exponent)
+                    base := mulmod(base, base, modulus)
                 }
-                exponent := shr(1, exponent)
-                base := mulmod(base, base, modulus)
+    
+                mstore(0, pow)
+                return(sub(add(0, 32), modulus_length), modulus_length)
             }
 
-            mstore(192, pow)
-            return(sub(add(192, 32), modulus_length), modulus_length)
+            // let exponent_limbs := add(div(exponent_length, 32), ONE())
+
+            // let pow := 1
+            // base := mod(base, modulus)
+            // for { let i := 0 } gt(exponent, ZERO()) { i := add(i, 1) } {
+            //     if eq(mod(exponent, TWO()), ONE()) {
+            //         pow := mulmod(pow, base, modulus)
+            //     }
+            //     exponent := shr(1, exponent)
+            //     base := mulmod(base, base, modulus)
+            // }
+
+            // mstore(0, pow)
+            // return(sub(add(0, 32), modulus_length), modulus_length)
 		}
 	}
 }
