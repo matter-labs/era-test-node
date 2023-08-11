@@ -17,6 +17,10 @@ rebuild-contracts:
 rust-build:
 	cargo build --release
 
+# Build the Rust project for a specific target. Primarily used for CI.
+build-%:
+	cross build --bin era_test_node --target $* --release
+
 # Build the Rust documentation
 rust-doc:
 	cargo doc --no-deps --open
@@ -41,4 +45,4 @@ all: build-contracts rust-build
 # Clean everything
 clean: clean-contracts
 
-.PHONY: build-contracts clean-contracts rebuild-contracts rust-build lint test all clean
+.PHONY: build-contracts clean-contracts rebuild-contracts rust-build lint test all clean build-%
