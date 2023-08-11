@@ -116,11 +116,11 @@ object "EcAdd" {
                     for {} iszero(and(u, ONE())) {} {
                         u := shr(1, u)
                         let current_b := b
-                        let current_b_is_odd := and(current_b, ONE())
-                        if iszero(current_b_is_odd) {
+                        switch and(current_b, ONE())
+                        case 0 {
                             b := shr(1, b)
                         }
-                        if current_b_is_odd {
+                        case 1 {
                             let new_b := add(b, modulus)
                             let carry := or(lt(new_b, b), lt(new_b, modulus))
                             b := shr(1, new_b)
@@ -134,11 +134,11 @@ object "EcAdd" {
                     for {} iszero(and(v, ONE())) {} {
                         v := shr(1, v)
                         let current_c := c
-                        let current_c_is_odd := and(current_c, ONE())
-                        if iszero(current_c_is_odd) {
+                        switch and(current_c, ONE())
+                        case 0 {
                             c := shr(1, c)
                         }
-                        if current_c_is_odd {
+                        case 1 {
                             let new_c := add(c, modulus)
                             let carry := or(lt(new_c, c), lt(new_c, modulus))
                             c := shr(1, new_c)
