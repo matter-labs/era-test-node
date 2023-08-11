@@ -55,23 +55,6 @@ object "EcAdd" {
             //                      HELPER FUNCTIONS
             // ////////////////////////////////////////////////////////////////
 
-            // @dev Packs precompile parameters into one word.
-            // Note: functions expect to work with 32/64 bits unsigned integers.
-            // Caller should ensure the type matching before!
-            function unsafePackPrecompileParams(
-                uint32_inputOffsetInWords,
-                uint32_inputLengthInWords,
-                uint32_outputOffsetInWords,
-                uint32_outputLengthInWords,
-                uint64_perPrecompileInterpreted
-            ) -> rawParams {
-                rawParams := uint32_inputOffsetInWords
-                rawParams := or(rawParams, shl(32, uint32_inputLengthInWords))
-                rawParams := or(rawParams, shl(64, uint32_outputOffsetInWords))
-                rawParams := or(rawParams, shl(96, uint32_outputLengthInWords))
-                rawParams := or(rawParams, shl(192, uint64_perPrecompileInterpreted))
-            }
-
             /// @dev Executes the `precompileCall` opcode.
             function precompileCall(precompileParams, gasToBurn) -> ret {
                 // Compiler simulation for calling `precompileCall` opcode
@@ -111,18 +94,9 @@ object "EcAdd" {
             }
 
             function burnGas() {
-                let precompileParams := unsafePackPrecompileParams(
-                        0, // input offset in words
-                        4, // input length in words (x1, y1, x2, y2)
-                        0, // output offset in words
-                        2, // output length in words (x3, y3)
-                        0  // No special meaning
-                )
-                let gasToPay := gas()
-
                 // Precompiles that do not have a circuit counterpart
                 // will burn the provided gas by calling this function.
-                precompileCall(precompileParams, gasToPay)
+                precompileCall(0, gas())
             }
 
             function binaryExtendedEuclideanAlgorithm(base) -> inv {
@@ -275,14 +249,16 @@ object "EcAdd" {
             let x2 := calldataload(64)
             let y2 := calldataload(96)
 
+            let p1IsInfinity := isInfinity(x1, y1)
+            let p2IsInfinity := isInfinity(x2, y2)
 
-            if and(isInfinity(x1, y1), isInfinity(x2, y2)) {
+            if and(p1IsInfinity, p2IsInfinity) {
                 // Infinity + Infinity = Infinity
                 mstore(0, ZERO())
                 mstore(32, ZERO())
                 return(0, 64)
             }
-            if and(isInfinity(x1, y1), iszero(isInfinity(x2, y2))) {
+            if and(p1IsInfinity, iszero(p2IsInfinity)) {
                 // Infinity + P = P
 
                 // Ensure that the coordinates are between 0 and the group order.
@@ -301,7 +277,7 @@ object "EcAdd" {
                 mstore(32, y2)
                 return(0, 64)
             }
-            if and(iszero(isInfinity(x1, y1)), isInfinity(x2, y2)) {
+            if and(iszero(p1IsInfinity), p2IsInfinity) {
                 // P + Infinity = P
 
                 // Ensure that the coordinates are between 0 and the group order.
