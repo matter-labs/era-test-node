@@ -74,6 +74,15 @@ object "ModExp" {
             let exponent_length := calldataload(32)
             let modulus_length := calldataload(64)
 
+            if iszero(gt(calldatasize(), 96)) {
+                return(0, 0)
+            }
+
+            // Handle a special case when both the base and mod length is zero
+            if and(iszero(base_length), iszero(modulus_length)) {
+                return(0, 0)
+            }
+
             let base_pointer := 96
             let base_padding := sub(WORD_SIZE(), base_length)
             let padded_base_pointer := add(96, base_padding)
