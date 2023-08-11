@@ -125,19 +125,79 @@ object "EcAdd" {
                 precompileCall(precompileParams, gasToPay)
             }
 
-            function invmod(base, modulus) -> inv {
-                inv := powmod(base, sub(modulus, TWO()), modulus)
-            }
+            function binaryExtendedEuclideanAlgorithm(base) -> inv {
+                // Precomputation of 1 << 255
+                let mask := 57896044618658097711785492504343953926634992332820282019728792003956564819968
+                let modulus := ALT_BN128_GROUP_ORDER()
+                // modulus >> 255 == 0 -> modulus & 1 << 255 == 0
+                let modulusHasSpareBits := iszero(and(modulus, mask))
 
-            function powmod(base, exponent, modulus) -> pow {
-                pow := 1
-                let aux_exponent := exponent
-                for { } gt(aux_exponent, ZERO()) { } {
-                        if mod(aux_exponent, TWO()) {
-                            pow := mulmod(pow, base, modulus)
+                let u := base
+                let v := modulus
+                // Avoids unnecessary reduction step.
+                let b := R2_MOD_ALT_BN128_GROUP_ORDER()
+                let c := ZERO()
+
+                for {} and(iszero(eq(u, ONE())), iszero(eq(v, ONE()))) {} {
+                    for {} iszero(and(u, ONE())) {} {
+                        u := shr(1, u)
+                        let current_b := b
+                        let current_b_is_odd := and(current_b, ONE())
+                        if iszero(current_b_is_odd) {
+                            b := shr(1, b)
                         }
-                        aux_exponent := shr(1, aux_exponent)
-                        base := mulmod(base, base, modulus)
+                        if current_b_is_odd {
+                            let new_b := add(b, modulus)
+                            let carry := or(lt(new_b, b), lt(new_b, modulus))
+                            b := shr(1, new_b)
+
+                            if and(iszero(modulusHasSpareBits), carry) {
+                                b := or(b, mask)
+                            }
+                        }
+                    }
+
+                    for {} iszero(and(v, ONE())) {} {
+                        v := shr(1, v)
+                        let current_c := c
+                        let current_c_is_odd := and(current_c, ONE())
+                        if iszero(current_c_is_odd) {
+                            c := shr(1, c)
+                        }
+                        if current_c_is_odd {
+                            let new_c := add(c, modulus)
+                            let carry := or(lt(new_c, c), lt(new_c, modulus))
+                            c := shr(1, new_c)
+
+                            if and(iszero(modulusHasSpareBits), carry) {
+                                c := or(c, mask)
+                            }
+                        }
+                    }
+
+                    switch gt(v, u)
+                    case 0 {
+                        u := sub(u, v)
+                        if lt(b, c) {
+                            b := add(b, modulus)
+                        }
+                        b := sub(b, c)
+                    }
+                    case 1 {
+                        v := sub(v, u)
+                        if lt(c, b) {
+                            c := add(c, modulus)
+                        }
+                        c := sub(c, b)
+                    }
+                }
+
+                switch eq(u, ONE())
+                case 0 {
+                    inv := c
+                }
+                case 1 {
+                    inv := b
                 }
             }
 
@@ -198,10 +258,7 @@ object "EcAdd" {
             }
 
             function montgomeryModularInverse(a) -> invmod {
-                let a_inv := invmod(a, ALT_BN128_GROUP_ORDER())
-                let higher_half_of_inverse := getHighestHalfOfMultiplication(a_inv, R3_MOD_ALT_BN128_GROUP_ORDER())
-                let lowest_half_of_inverse := mul(a_inv, R3_MOD_ALT_BN128_GROUP_ORDER())
-                invmod := REDC(lowest_half_of_inverse, higher_half_of_inverse)
+                invmod := binaryExtendedEuclideanAlgorithm(a)
             }
 
             function montgomeryDiv(dividend, divisor) -> quotient {
