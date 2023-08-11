@@ -50,22 +50,6 @@ object "ModExp" {
                 isZero := iszero(isZero)
             }
 
-            // CONSOLE.LOG Caller
-            // It prints 'val' in the node console and it works using the 'mem'+0x40 memory sector
-            function console_log(mem, val) -> {
-                let log_address := 0x000000000000000000636F6e736F6c652e6c6f67
-                // load the free memory pointer
-                let freeMemPointer := mload(mem)
-                // store the function selector of log(uint256) in memory
-                mstore(freeMemPointer, 0xf82c50f1)
-                // store the first argument of log(uint256) in the next memory slot
-                mstore(add(freeMemPointer, 0x20), val)
-                // call the console.log contract
-                if iszero(staticcall(gas(),log_address,add(freeMemPointer, 28),add(freeMemPointer, 0x40),0x00,0x00)) {
-                    revert(0,0)
-                }
-            }
-
             ////////////////////////////////////////////////////////////////
             //                      FALLBACK
             ////////////////////////////////////////////////////////////////
@@ -74,7 +58,7 @@ object "ModExp" {
             let exponent_length := calldataload(32)
             let modulus_length := calldataload(64)
 
-            if iszero(gt(calldatasize(), 96)) {
+            if lt(calldatasize(), 96) {
                 return(0, 0)
             }
 
@@ -143,16 +127,13 @@ object "ModExp" {
 
             // base^0 % modulus = 1
             if exponentIsZero(exponent_length, memory_exponent_pointer) {
-                console_log(0x600, 0xf)
                 mstore(0, ONE())
                 let unpadding := sub(WORD_SIZE(), modulus_length)
                 return(unpadding, modulus_length)
             }
 
             // 0^exponent % modulus = 0
-            console_log(0x600, base)
             if iszero(base) {
-                console_log(0x600, 0xf)
                 mstore(0, ZERO())
                 return(0, modulus_length)
             }
