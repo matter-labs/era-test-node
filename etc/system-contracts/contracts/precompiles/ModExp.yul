@@ -25,19 +25,6 @@ object "ModExp" {
             // @dev Packs precompile parameters into one word.
             // Note: functions expect to work with 32/64 bits unsigned integers.
             // Caller should ensure the type matching before!
-            function unsafePackPrecompileParams(
-                uint32_inputOffsetInWords,
-                uint32_inputLengthInWords,
-                uint32_outputOffsetInWords,
-                uint32_outputLengthInWords,
-                uint64_perPrecompileInterpreted
-            ) -> rawParams {
-                rawParams := uint32_inputOffsetInWords
-                rawParams := or(rawParams, shl(32, uint32_inputLengthInWords))
-                rawParams := or(rawParams, shl(64, uint32_outputOffsetInWords))
-                rawParams := or(rawParams, shl(96, uint32_outputLengthInWords))
-                rawParams := or(rawParams, shl(192, uint64_perPrecompileInterpreted))
-            }
 
             /// @dev Executes the `precompileCall` opcode.
             function precompileCall(precompileParams, gasToBurn) -> ret {
@@ -57,71 +44,107 @@ object "ModExp" {
                 isZero := iszero(isZero)
             }
 
+            // CONSOLE.LOG Caller
+            // It prints 'val' in the node console and it works using the 'mem'+0x40 memory sector
+            function console_log(mem, val) -> {
+                let log_address := 0x000000000000000000636F6e736F6c652e6c6f67
+                // load the free memory pointer
+                let freeMemPointer := mload(mem)
+                // store the function selector of log(uint256) in memory
+                mstore(freeMemPointer, 0xf82c50f1)
+                // store the first argument of log(uint256) in the next memory slot
+                mstore(add(freeMemPointer, 0x20), val)
+                // call the console.log contract
+                if iszero(staticcall(gas(),log_address,add(freeMemPointer, 28),add(freeMemPointer, 0x40),0x00,0x00)) {
+                    revert(0,0)
+                }
+            }
+
             ////////////////////////////////////////////////////////////////
             //                      FALLBACK
             ////////////////////////////////////////////////////////////////
-
-            let calldataSize := calldatasize() 
-            calldatacopy(0, 0, calldataSize)
 
             let base_length := calldataload(0)
             let exponent_length := calldataload(32)
             let modulus_length := calldataload(64)
 
             let base_pointer := 96
-            calldatacopy(add(96, sub(32, base_length)), base_pointer, base_length)
+            let base_padding := sub(32, base_length)
+            let padded_base_pointer := add(96, base_padding)
+            calldatacopy(padded_base_pointer, base_pointer, base_length)
+            let base := mload(base_pointer)
             
-            let exponent_pointer := add(base_pointer, base_length)
-            let exponent_limbs := add(div(exponent_length, 32), ONE())
+            let calldata_exponent_pointer := add(base_pointer, base_length)
+            let memory_exponent_pointer := add(base_pointer, 32)
+            let exponent_limbs := ZERO()
+            switch iszero(mod(exponent_length, 32))
+            case 0 {
+                exponent_limbs := add(div(exponent_length, 32), ONE())
+            }
+            case 1 {
+                exponent_limbs := div(exponent_length, 32)
+            }
+            // The exponent expected length given the amount of limbs.
+            let adjusted_exponent_length := mul(32, exponent_limbs)
+            let next_limb_pointer := calldata_exponent_pointer
             for { let limb_number := 0 } lt(limb_number, exponent_limbs) { limb_number := add(limb_number, ONE()) } {
-                // The msb of the left most limb could be one.
+                // The msb of the leftmost limb could be one.
+                // This left-pads with zeros the leftmost limbs to achieve 32 bytes.
                 if iszero(limb_number) {
-                    let first_limb_length := add(exponent_pointer, sub(mul(32, exponent_limbs), 32))
-                    calldatacopy(first_limb_length, first_limb_length, 32)
-                    exponent_pointer := add(exponent_pointer, 32)
+                    // The amount of zeros to left-pad.
+                    let padding := sub(adjusted_exponent_length, exponent_length)
+                    // This is either 0 or > 0 if there are any zeros to pad.
+                    let padded_exponent_pointer := add(memory_exponent_pointer, padding)
+                    let amount_of_bytes_for_first_limb := sub(32, padding)
+                    calldatacopy(padded_exponent_pointer, calldata_exponent_pointer, amount_of_bytes_for_first_limb)
+                    next_limb_pointer := add(calldata_exponent_pointer, amount_of_bytes_for_first_limb)
                     continue
                 }
-                calldatacopy(exponent_pointer, exponent_pointer, 32)
-                exponent_pointer := add(exponent_pointer, 32)
+                calldatacopy(next_limb_pointer, next_limb_pointer, 32)
+                next_limb_pointer := add(next_limb_pointer, 32)
             }
-            
-            let modulus_pointer := add(exponent_pointer, exponent_length)
-            calldatacopy(add(160, sub(32, modulus_length)), modulus_pointer, modulus_length)
 
-            let base := mload(base_pointer)
-            let modulus := mload(modulus_pointer)
+            let calldata_modulus_pointer := add(calldata_exponent_pointer, exponent_length)
+            let memory_modulus_pointer := add(memory_exponent_pointer, adjusted_exponent_length)
+            calldatacopy(add(memory_modulus_pointer, sub(32, modulus_length)), calldata_modulus_pointer, modulus_length)
+
+            let modulus := mload(memory_modulus_pointer)
 
             // 1^exponent % modulus = 1
             if eq(base, ONE()) {
-                mstore(192, ONE())
-                return(sub(add(192, 32), modulus_length), modulus_length)
+                mstore(0, ONE())
+                let unpadding := sub(32, modulus_length)
+                return(unpadding, modulus_length)
             }
 
             // base^exponent % 0 = 0
             if iszero(modulus) {
-                mstore(192, ZERO())
-                return(sub(add(192, 32), modulus_length), modulus_length)
+                mstore(0, ZERO())
+                let unpadding := sub(32, modulus_length)
+                return(unpadding, modulus_length)
             }
 
             // base^0 % modulus = 1
             if exponentIsZero(exponent_length, add(base_pointer, base_length)) {
-                mstore(192, ONE())
-                return(sub(add(192, 32), modulus_length), modulus_length)
+                mstore(0, ONE())
+                let unpadding := sub(32, modulus_length)
+                return(unpadding, modulus_length)
             }
 
             // 0^exponent % modulus = 0
             if eq(base, ZERO()) {
-                mstore(192, ZERO())
-                return(sub(add(192, 32), modulus_length), modulus_length)
+                mstore(0, ZERO())
+                let unpadding := sub(32, modulus_length)
+                return(unpadding, modulus_length)
             }
+
+            console_log(0x600, exponent_limbs)
 
             if eq(exponent_limbs, ONE()) {
                 let pow := 1
-
-                // We save the exponent from calldataSize pointer
-                calldatacopy(calldataSize, add(add(96, base_length), sub(32, exponent_length)), calldataSize)
-                let exponent := mload(calldataSize)
-
+                // If we have one limb, then the exponent has 32 bytes and it is
+                // located in 0x
+                let exponent := mload(128)
                 base := mod(base, modulus)
                 for { let i := 0 } gt(exponent, ZERO()) { i := add(i, 1) } {
                     if eq(mod(exponent, TWO()), ONE()) {
@@ -132,7 +155,8 @@ object "ModExp" {
                 }
     
                 mstore(0, pow)
-                return(sub(add(0, 32), modulus_length), modulus_length)
+                let unpadding := sub(32, modulus_length)
+                return(unpadding, modulus_length)
             }
 
             // let exponent_limbs := add(div(exponent_length, 32), ONE())
