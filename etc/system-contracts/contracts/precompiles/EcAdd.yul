@@ -22,18 +22,6 @@ object "EcAdd" {
                 three := 0x3
             }
 
-            function MONTGOMERY_ONE() -> m_one {
-                m_one := 6350874878119819312338956282401532409788428879151445726012394534686998597021
-            }
-
-            function MONTGOMERY_TWO() -> m_two {
-                m_two := 12701749756239638624677912564803064819576857758302891452024789069373997194042
-            }
-
-            function MONTGOMERY_THREE() -> m_three {
-                m_three := 19052624634359457937016868847204597229365286637454337178037183604060995791063
-            }
-
             // Group order of alt_bn128, see https://eips.ethereum.org/EIPS/eip-196
             function ALT_BN128_GROUP_ORDER() -> ret {
                 ret := 21888242871839275222246405745257275088696311157297823662689037894645226208583
@@ -61,6 +49,29 @@ object "EcAdd" {
                 ret := verbatim_2i_1o("precompile", precompileParams, gasToBurn)
             }
 
+            function burnGas() {
+                // Precompiles that do not have a circuit counterpart
+                // will burn the provided gas by calling this function.
+                precompileCall(0, gas())
+            }
+
+            function getHighestHalfOfMultiplication(multiplicand, multiplier) -> ret {
+                ret := verbatim_2i_1o("mul_high", multiplicand, multiplier)
+            }
+
+            function submod(
+                uint256_minuend,
+                uint256_subtrahend,
+                uint256_modulus,
+            ) -> difference {
+                difference := addmod(uint256_minuend, sub(uint256_modulus, uint256_subtrahend), uint256_modulus)
+            }
+
+            function overflowingAdd(augend, addend) -> sum, overflowed {
+                sum := add(augend, addend)
+                overflowed := or(lt(sum, augend), lt(sum, addend))
+            }
+
             // Returns 1 if (x, y) is in the curve, 0 otherwise
             function pointIsInCurve(
                 uint256_x,
@@ -74,14 +85,6 @@ object "EcAdd" {
                 ret := eq(y_squared, x_qubed_plus_three)
             }
 
-            function submod(
-                uint256_minuend,
-                uint256_subtrahend,
-                uint256_modulus,
-            ) -> difference {
-                difference := addmod(uint256_minuend, sub(uint256_modulus, uint256_subtrahend), uint256_modulus)
-            }
-
             function isInfinity(
                 uint256_x,
                 uint256_y,
@@ -90,13 +93,7 @@ object "EcAdd" {
             }
 
             function isOnGroupOrder(num) -> ret {
-                ret := iszero(gt(num, sub(ALT_BN128_GROUP_ORDER(), ONE())))
-            }
-
-            function burnGas() {
-                // Precompiles that do not have a circuit counterpart
-                // will burn the provided gas by calling this function.
-                precompileCall(0, gas())
+                ret := lt(num, sub(ALT_BN128_GROUP_ORDER(), ONE()))
             }
 
             function binaryExtendedEuclideanAlgorithm(base) -> inv {
@@ -175,15 +172,6 @@ object "EcAdd" {
                 }
             }
 
-            function overflowingAdd(augend, addend) -> sum, overflowed {
-                sum := add(augend, addend)
-                overflowed := or(lt(sum, augend), lt(sum, addend))
-            }
-
-            function getHighestHalfOfMultiplication(multiplicand, multiplier) -> ret {
-                ret := verbatim_2i_1o("mul_high", multiplicand, multiplier)
-            }
-
             // https://en.wikipedia.org/wiki/Montgomery_modular_multiplication//The_REDC_algorithm
             function REDC(lowest_half_of_T, higher_half_of_T) -> S {
                 let q := mul(lowest_half_of_T, N_PRIME())
@@ -217,18 +205,6 @@ object "EcAdd" {
                 let higher_half_of_product := getHighestHalfOfMultiplication(multiplicand, multiplier)
                 let lowest_half_of_product := mul(multiplicand, multiplier)
                 ret := REDC(lowest_half_of_product, higher_half_of_product)
-            }
-
-            function montgomeryModExp(base, exponent) -> pow {
-                pow := MONTGOMERY_ONE()
-                let aux_exponent := exponent
-                for { } gt(aux_exponent, ZERO()) { } {
-                        if mod(aux_exponent, 2) {
-                            pow := montgomeryMul(pow, base)
-                        }
-                        aux_exponent := shr(1, aux_exponent)
-                        base := montgomeryMul(base, base)
-                }
             }
 
             function montgomeryModularInverse(a) -> invmod {
@@ -303,6 +279,12 @@ object "EcAdd" {
                 revert(0, 0)
             }
 
+            // Ensure that the coordinates are between 0 and the group order.
+            if or(iszero(isOnGroupOrder(x2)), iszero(isOnGroupOrder(y2))) {
+                burnGas()
+                revert(0, 0)
+            }
+
             // Ensure that the points are in the curve (Y^2 = X^3 + 3).
             if or(iszero(pointIsInCurve(x1, y1)), iszero(pointIsInCurve(x2, y2))) {
                 burnGas()
@@ -332,7 +314,8 @@ object "EcAdd" {
                 let y := intoMontgomeryForm(y1)
 
                 // (3 * x1^2 + a) / (2 * y1)
-                let slope := montgomeryDiv(montgomeryMul(MONTGOMERY_THREE(), montgomeryMul(x, x)), addmod(y, y, ALT_BN128_GROUP_ORDER()))
+                let x1_squared := montgomeryMul(x, x)
+                let slope := montgomeryDiv(addmod(x1_squared, addmod(x1_squared, x1_squared, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER()), addmod(y, y, ALT_BN128_GROUP_ORDER()))
                 // x3 = slope^2 - 2 * x1
                 let x3 := submod(montgomeryMul(slope, slope), addmod(x, x, ALT_BN128_GROUP_ORDER()), ALT_BN128_GROUP_ORDER())
                 // y3 = slope * (x1 - x3) - y1
