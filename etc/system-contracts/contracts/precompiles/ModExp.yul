@@ -38,12 +38,14 @@ object "ModExp" {
 
             function exponentIsZero(exponent_limbs, exponent_pointer) -> isZero {
                 isZero := 0x00
+                let next_limb_pointer := exponent_pointer
                 for { let limb_number := 0 } lt(limb_number, exponent_limbs) { limb_number := add(limb_number, ONE()) } {
-                    let limb := mload(add(exponent_pointer, mul(WORD_SIZE(), limb_number)))
+                    let limb := mload(next_limb_pointer)
                     isZero := or(isZero, limb)
                     if isZero {
                         break
                     }
+                    next_limb_pointer := add(next_limb_pointer, WORD_SIZE())
                 }
                 isZero := iszero(isZero)
             }
@@ -127,22 +129,23 @@ object "ModExp" {
             // base^exponent % 0 = 0
             if iszero(modulus) {
                 mstore(0, ZERO())
-                let unpadding := sub(WORD_SIZE(), modulus_length)
-                return(unpadding, modulus_length)
+                return(0, modulus_length)
             }
 
             // base^0 % modulus = 1
-            if exponentIsZero(exponent_length, add(base_pointer, base_length)) {
+            if exponentIsZero(exponent_length, memory_exponent_pointer) {
+                console_log(0x600, 0xf)
                 mstore(0, ONE())
                 let unpadding := sub(WORD_SIZE(), modulus_length)
                 return(unpadding, modulus_length)
             }
 
             // 0^exponent % modulus = 0
-            if eq(base, ZERO()) {
+            console_log(0x600, base)
+            if iszero(base) {
+                console_log(0x600, 0xf)
                 mstore(0, ZERO())
-                let unpadding := sub(WORD_SIZE(), modulus_length)
-                return(unpadding, modulus_length)
+                return(0, modulus_length)
             }
 
             switch eq(exponent_limbs, ONE())
