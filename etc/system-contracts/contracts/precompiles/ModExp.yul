@@ -26,20 +26,10 @@ object "ModExp" {
             //                      HELPER FUNCTIONS
             //////////////////////////////////////////////////////////////////
 
-            // @dev Packs precompile parameters into one word.
-            // Note: functions expect to work with 32/64 bits unsigned integers.
-            // Caller should ensure the type matching before!
-
-            /// @dev Executes the `precompileCall` opcode.
-            function precompileCall(precompileParams, gasToBurn) -> ret {
-                // Compiler simulation for calling `precompileCall` opcode
-                ret := verbatim_2i_1o("precompile", precompileParams, gasToBurn)
-            }
-
             function exponentIsZero(exponent_limbs, exponent_pointer) -> isZero {
-                isZero := 0x00
+                isZero := ZERO()
                 let next_limb_pointer := exponent_pointer
-                for { let limb_number := 0 } lt(limb_number, exponent_limbs) { limb_number := add(limb_number, ONE()) } {
+                for { let limb_number := ZERO() } lt(limb_number, exponent_limbs) { limb_number := add(limb_number, ONE()) } {
                     let limb := mload(next_limb_pointer)
                     isZero := or(isZero, limb)
                     if isZero {
@@ -73,6 +63,32 @@ object "ModExp" {
             calldatacopy(padded_base_pointer, base_pointer, base_length)
             let base := mload(base_pointer)
             
+            // As the exponent length could be more than 32 bytes we
+            // decided to represent the exponent with limbs. Because
+            // of that, we keep track of a calldata pointer and a memory 
+            // pointer.
+            //
+            // The calldata pointer keeps track of the real exponent length
+            // (which could not be divisible by the word size).
+            // The memory pointer keeps track of the adjusted exponent length
+            // (which is always divisible by the word size).
+            //
+            // There is a special case to handle when the leftmost limb of 
+            // the exponent has less than 32 bytes in the calldata (e.g. if 
+            // the calldata has 33 bytes in the calldata, in our limbs 
+            // representation it should have 64 bytes). Here is where it
+            // it could be a difference between the real exponent length and
+            // the adjusted exponent length.
+            //
+            // For the amount of limbs, if the exponent length is divisible 
+            // by the word size, then we just divide it by the word size. 
+            // If not, we divide and then add the remainder limb (this is
+            // the case when the leftmost limb has less than 32 bytes).
+            //
+            // In the special case, the memory exponent pointer and the
+            // calldata exponent pointer are outphased. That's why after
+            // loading the exponent from the calldata, we still need to 
+            // compute two pointers for the modulus.
             let calldata_exponent_pointer := add(base_pointer, base_length)
             let memory_exponent_pointer := add(base_pointer, WORD_SIZE())
             let exponent_limbs := ZERO()
@@ -139,6 +155,7 @@ object "ModExp" {
             }
 
             switch eq(exponent_limbs, ONE())
+            // Special case of one limb, we load the hole word.
             case 1 {
                 let pow := 1
                 // If we have one limb, then the exponent has 32 bytes and it is
