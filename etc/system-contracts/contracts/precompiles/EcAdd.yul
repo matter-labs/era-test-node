@@ -14,14 +14,6 @@ object "EcAdd" {
                 one := 0x1
             }
 
-            function TWO() -> two {
-                two := 0x2
-            }
-
-            function THREE() -> three {
-                three := 0x3
-            }
-
             // Group order of alt_bn128, see https://eips.ethereum.org/EIPS/eip-196
             function ALT_BN128_GROUP_ORDER() -> ret {
                 ret := 21888242871839275222246405745257275088696311157297823662689037894645226208583
@@ -29,10 +21,6 @@ object "EcAdd" {
 
             function R2_MOD_ALT_BN128_GROUP_ORDER() -> ret {
                 ret := 3096616502983703923843567936837374451735540968419076528771170197431451843209
-            }
-
-            function R3_MOD_ALT_BN128_GROUP_ORDER() -> ret {
-                ret := 14921786541159648185948152738563080959093619838510245177710943249661917737183
             }
 
             function N_PRIME() -> ret {
