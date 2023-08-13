@@ -252,7 +252,7 @@ object "EcAdd" {
             }
 
             // Ensure that the coordinates are between 0 and the group order.
-            if or(iszero(isOnGroupOrder(x1)), iszero(isOnGroupOrder(y1)), iszero(isOnGroupOrder(x2)), iszero(isOnGroupOrder(y2))) {
+            if or(iszero(isOnGroupOrder(x1)), iszero(isOnGroupOrder(y1))) {
                 burnGas()
                 revert(0, 0)
             }
