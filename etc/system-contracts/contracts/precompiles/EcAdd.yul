@@ -47,12 +47,8 @@ object "EcAdd" {
                 ret := verbatim_2i_1o("mul_high", multiplicand, multiplier)
             }
 
-            function submod(
-                uint256_minuend,
-                uint256_subtrahend,
-                uint256_modulus,
-            ) -> difference {
-                difference := addmod(uint256_minuend, sub(uint256_modulus, uint256_subtrahend), uint256_modulus)
+            function submod(minuend, subtrahend, modulus) -> difference {
+                difference := addmod(minuend, sub(modulus, subtrahend), modulus)
             }
 
             function overflowingAdd(augend, addend) -> sum, overflowed {
@@ -61,23 +57,17 @@ object "EcAdd" {
             }
 
             // Returns 1 if (x, y) is in the curve, 0 otherwise
-            function pointIsInCurve(
-                uint256_x,
-                uint256_y,
-            ) -> ret {
-                let y_squared := mulmod(uint256_y, uint256_y, ALT_BN128_GROUP_ORDER())
-                let x_squared := mulmod(uint256_x, uint256_x, ALT_BN128_GROUP_ORDER())
-                let x_qubed := mulmod(x_squared, uint256_x, ALT_BN128_GROUP_ORDER())
+            function pointIsInCurve(x, y) -> ret {
+                let y_squared := mulmod(y, y, ALT_BN128_GROUP_ORDER())
+                let x_squared := mulmod(x, x, ALT_BN128_GROUP_ORDER())
+                let x_qubed := mulmod(x_squared, x, ALT_BN128_GROUP_ORDER())
                 let x_qubed_plus_three := addmod(x_qubed, 3, ALT_BN128_GROUP_ORDER())
 
                 ret := eq(y_squared, x_qubed_plus_three)
             }
 
-            function isInfinity(
-                uint256_x,
-                uint256_y,
-            ) -> ret {
-                ret := and(eq(uint256_x, ZERO()), eq(uint256_y, ZERO()))
+            function isInfinity(x, y) -> ret {
+                ret := and(eq(x, ZERO()), eq(y, ZERO()))
             }
 
             function isOnGroupOrder(num) -> ret {
@@ -100,15 +90,15 @@ object "EcAdd" {
                 for {} and(iszero(eq(u, ONE())), iszero(eq(v, ONE()))) {} {
                     for {} iszero(and(u, ONE())) {} {
                         u := shr(1, u)
-                        let current_b := b
-                        switch and(current_b, ONE())
+                        let currentB := b
+                        switch and(currentB, ONE())
                         case 0 {
                             b := shr(1, b)
                         }
                         case 1 {
-                            let new_b := add(b, modulus)
-                            let carry := or(lt(new_b, b), lt(new_b, modulus))
-                            b := shr(1, new_b)
+                            let newB := add(b, modulus)
+                            let carry := or(lt(newB, b), lt(newB, modulus))
+                            b := shr(1, newB)
 
                             if and(iszero(modulusHasSpareBits), carry) {
                                 b := or(b, mask)
@@ -118,15 +108,15 @@ object "EcAdd" {
 
                     for {} iszero(and(v, ONE())) {} {
                         v := shr(1, v)
-                        let current_c := c
-                        switch and(current_c, ONE())
+                        let currentC := c
+                        switch and(currentC, ONE())
                         case 0 {
                             c := shr(1, c)
                         }
                         case 1 {
-                            let new_c := add(c, modulus)
-                            let carry := or(lt(new_c, c), lt(new_c, modulus))
-                            c := shr(1, new_c)
+                            let newC := add(c, modulus)
+                            let carry := or(lt(newC, c), lt(newC, modulus))
+                            c := shr(1, newC)
 
                             if and(iszero(modulusHasSpareBits), carry) {
                                 c := or(c, mask)
@@ -161,38 +151,38 @@ object "EcAdd" {
             }
 
             // https://en.wikipedia.org/wiki/Montgomery_modular_multiplication//The_REDC_algorithm
-            function REDC(lowest_half_of_T, higher_half_of_T) -> S {
-                let q := mul(lowest_half_of_T, N_PRIME())
-                let a_high := add(higher_half_of_T, getHighestHalfOfMultiplication(q, ALT_BN128_GROUP_ORDER()))
-                let a_low, overflowed := overflowingAdd(lowest_half_of_T, mul(q, ALT_BN128_GROUP_ORDER()))
+            function REDC(lowestHalfOfT, higherHalfOfT) -> S {
+                let q := mul(lowestHalfOfT, N_PRIME())
+                let aHigh := add(higherHalfOfT, getHighestHalfOfMultiplication(q, ALT_BN128_GROUP_ORDER()))
+                let aLow, overflowed := overflowingAdd(lowestHalfOfT, mul(q, ALT_BN128_GROUP_ORDER()))
                 if overflowed {
-                        a_high := add(a_high, ONE())
+                    aHigh := add(aHigh, ONE())
                 }
-                S := a_high
-                if iszero(lt(a_high, ALT_BN128_GROUP_ORDER())) {
-                        S := sub(a_high, ALT_BN128_GROUP_ORDER())
+                S := aHigh
+                if iszero(lt(aHigh, ALT_BN128_GROUP_ORDER())) {
+                    S := sub(aHigh, ALT_BN128_GROUP_ORDER())
                 }
             }
 
             // Transforming into the Montgomery form -> REDC((a mod N)(R2 mod N))
             function intoMontgomeryForm(a) -> ret {
-                let higher_half_of_a := getHighestHalfOfMultiplication(mod(a, ALT_BN128_GROUP_ORDER()), R2_MOD_ALT_BN128_GROUP_ORDER())
-                let lowest_half_of_a := mul(mod(a, ALT_BN128_GROUP_ORDER()), R2_MOD_ALT_BN128_GROUP_ORDER())
-                ret := REDC(lowest_half_of_a, higher_half_of_a)
+                let higherHalf := getHighestHalfOfMultiplication(mod(a, ALT_BN128_GROUP_ORDER()), R2_MOD_ALT_BN128_GROUP_ORDER())
+                let lowestHalf := mul(mod(a, ALT_BN128_GROUP_ORDER()), R2_MOD_ALT_BN128_GROUP_ORDER())
+                ret := REDC(lowestHalf, higherHalf)
             }
 
             // Transforming out of the Montgomery form -> REDC(a * R mod N)
             function outOfMontgomeryForm(m) -> ret {
-                let higher_half_of_m := ZERO()
-                let lowest_half_of_m := m
-                ret := REDC(lowest_half_of_m, higher_half_of_m)
+                let higherHalfOf := ZERO()
+                let lowestHalf := m
+                ret := REDC(lowestHalf, higherHalfOf)
             }
 
             // Multipling field elements in Montgomery form -> REDC((a * R mod N)(b * R mod N))
             function montgomeryMul(multiplicand, multiplier) -> ret {
-                let higher_half_of_product := getHighestHalfOfMultiplication(multiplicand, multiplier)
-                let lowest_half_of_product := mul(multiplicand, multiplier)
-                ret := REDC(lowest_half_of_product, higher_half_of_product)
+                let higherHalfOfProduct := getHighestHalfOfMultiplication(multiplicand, multiplier)
+                let lowestHalfOfProduct := mul(multiplicand, multiplier)
+                ret := REDC(lowestHalfOfProduct, higherHalfOfProduct)
             }
 
             function montgomeryModularInverse(a) -> invmod {
@@ -227,14 +217,14 @@ object "EcAdd" {
 
                 // Ensure that the coordinates are between 0 and the group order.
                 if or(iszero(isOnGroupOrder(x2)), iszero(isOnGroupOrder(y2))) {
-                        burnGas()
-                        revert(0, 0)
+                    burnGas()
+                    revert(0, 0)
                 }
 
                 // Ensure that the point is in the curve (Y^2 = X^3 + 3).
                 if iszero(pointIsInCurve(x2, y2)) {
-                        burnGas()
-                        revert(0, 0)
+                    burnGas()
+                    revert(0, 0)
                 }
 
                 mstore(0, x2)
@@ -246,14 +236,14 @@ object "EcAdd" {
 
                 // Ensure that the coordinates are between 0 and the group order.
                 if or(iszero(isOnGroupOrder(x1)), iszero(isOnGroupOrder(y1))) {
-                        burnGas()
-                        revert(0, 0)
+                    burnGas()
+                    revert(0, 0)
                 }
 
                 // Ensure that the point is in the curve (Y^2 = X^3 + 3).
                 if iszero(pointIsInCurve(x1, y1)) {
-                        burnGas()
-                        revert(0, 0)
+                    burnGas()
+                    revert(0, 0)
                 }
 
                 mstore(0, x1)
