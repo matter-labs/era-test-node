@@ -249,7 +249,7 @@ impl InMemoryNode {
         let mut inner = self.inner.write().unwrap();
         let keys = {
             let mut storage_view = StorageView::new(&inner.fork_storage);
-            storage_view.set_value(key, u256_to_h256(U256::from(10u128.pow(22))));
+            storage_view.set_value(key, u256_to_h256(U256::from(10u128.pow(30))));
             storage_view.modified_storage_keys().clone()
         };
 
@@ -889,6 +889,7 @@ impl EthNamespaceT for InMemoryNode {
         let vm_block_result =
             vm.execute_till_block_end_with_call_tracer(BootloaderJobType::TransactionExecution);
 
+        println!("{:?}", vm_block_result.full_result.revert_reason);
         match vm_block_result.full_result.revert_reason {
             Some(result) => {
                 let (message, data) = if let TxRevertReason::EthCall(reason) = result.revert_reason {
@@ -900,6 +901,8 @@ impl EthNamespaceT for InMemoryNode {
                 } else {
                     ("".to_owned(), None)
                 };
+                println!("{:?}", message);
+                println!("{:?}", data);
                 Err(Error {
                     code: jsonrpc_core::ErrorCode::ServerError(3),
                     message,
