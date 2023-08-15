@@ -1,7 +1,53 @@
+//! zkSync Era In-Memory Node
+//!
+//! The `era-test-node` crate provides an in-memory node designed primarily for local testing.
+//! It supports forking the state from other networks, making it a valuable tool for integration testing,
+//! bootloader and system contract testing, and prototyping.
+//!
+//! ## Overview
+//!
+//! - **In-Memory Database**: The node uses an in-memory database for storing state information,
+//!   and employs simplified hashmaps for tracking blocks and transactions.
+//!
+//! - **Forking**: In fork mode, the node fetches missing storage data from a remote source if not available locally.
+//!
+//! - **Remote Server Interaction**: The node can use the remote server (openchain) to resolve the ABI and topics
+//!   to human-readable names.
+//!
+//! - **Local Testing**: Designed for local testing, this node is not intended for production use.
+//!
+//! ## Features
+//!
+//! - Fork the state of mainnet, testnet, or a custom network.
+//! - Replay existing mainnet or testnet transactions.
+//! - Use local bootloader and system contracts.
+//! - Operate deterministically in non-fork mode.
+//! - Start quickly with pre-configured 'rich' accounts.
+//! - Resolve names of ABI functions and Events using openchain.
+//!
+//! ## Limitations
+//!
+//! - No communication between Layer 1 and Layer 2.
+//! - Many APIs are not yet implemented.
+//! - No support for accessing historical data.
+//! - Only one transaction allowed per Layer 1 batch.
+//! - Fixed values returned for zk Gas estimation.
+//!
+//! ## Usage
+//!
+//! To start the node, use the command `era_test_node run`. For more advanced functionalities like forking or
+//! replaying transactions, refer to the official documentation.
+//!
+//! ## Contributions
+//!
+//! Contributions to improve `era-test-node` are welcome. Please refer to the contribution guidelines for more details.
+
 use clap::{Parser, Subcommand};
+use configuration_api::ConfigurationApiNamespaceT;
 use fork::ForkDetails;
 use zks::ZkMockNamespaceImpl;
 
+mod configuration_api;
 mod console_log;
 mod deps;
 mod fork;
@@ -13,6 +59,7 @@ mod zks;
 
 use core::fmt::Display;
 use node::InMemoryNode;
+use zksync_core::api_server::web3::namespaces::NetNamespace;
 
 use std::{
     env,
@@ -29,10 +76,11 @@ use futures::{
     FutureExt,
 };
 use jsonrpc_core::IoHandler;
-use zksync_basic_types::{H160, H256};
+use zksync_basic_types::{L2ChainId, H160, H256};
 
+use crate::{configuration_api::ConfigurationApiNamespace, node::TEST_NODE_NETWORK_ID};
 use zksync_core::api_server::web3::backend_jsonrpc::namespaces::{
-    eth::EthNamespaceT, zks::ZksNamespaceT,
+    eth::EthNamespaceT, net::NetNamespaceT, zks::ZksNamespaceT,
 };
 
 /// List of wallets (address, private key) that we seed with tokens at start.
@@ -55,13 +103,21 @@ pub const RICH_WALLETS: [(&str, &str); 4] = [
     ),
 ];
 
-async fn build_json_http(addr: SocketAddr, node: InMemoryNode) -> tokio::task::JoinHandle<()> {
+async fn build_json_http(
+    addr: SocketAddr,
+    node: InMemoryNode,
+    net: NetNamespace,
+    config_api: ConfigurationApiNamespace,
+    zks: ZkMockNamespaceImpl,
+) -> tokio::task::JoinHandle<()> {
     let (sender, recv) = oneshot::channel::<()>();
 
     let io_handler = {
         let mut io = IoHandler::new();
         io.extend_with(node.to_delegate());
-        io.extend_with(ZkMockNamespaceImpl.to_delegate());
+        io.extend_with(net.to_delegate());
+        io.extend_with(config_api.to_delegate());
+        io.extend_with(zks.to_delegate());
 
         io
     };
@@ -114,6 +170,20 @@ pub enum ShowCalls {
     User,
     System,
     All,
+}
+
+impl FromStr for ShowCalls {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_ref() {
+            "none" => Ok(ShowCalls::None),
+            "user" => Ok(ShowCalls::User),
+            "system" => Ok(ShowCalls::System),
+            "all" => Ok(ShowCalls::All),
+            _ => Err(()),
+        }
+    }
 }
 
 impl Display for ShowCalls {
@@ -209,18 +279,29 @@ async fn main() -> anyhow::Result<()> {
     );
 
     if !transactions_to_replay.is_empty() {
-        node.apply_txs(transactions_to_replay);
+        let _ = node.apply_txs(transactions_to_replay);
     }
 
-    println!("Setting Rich accounts:");
-    for (address, private_key) in RICH_WALLETS.iter() {
+    println!("\nRich Accounts");
+    println!("=============");
+    for (index, wallet) in RICH_WALLETS.iter().enumerate() {
+        let address = wallet.0;
+        let private_key = wallet.1;
         node.set_rich_account(H160::from_str(address).unwrap());
-        println!("Address: {:?} Key: {:?}", address, private_key)
+        println!("Account #{}: {} (10000 ETH)", index, address);
+        println!("Private Key: {}\n", private_key);
     }
+
+    let net = NetNamespace::new(L2ChainId(TEST_NODE_NETWORK_ID));
+    let config_api = ConfigurationApiNamespace::new(node.get_inner());
+    let zks = ZkMockNamespaceImpl::new(node.get_inner());
 
     let threads = build_json_http(
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), opt.port),
         node,
+        net,
+        config_api,
+        zks,
     )
     .await;
 

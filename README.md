@@ -1,97 +1,102 @@
-# Migrated to https://github.com/matter-labs/era-test-node
+<div align="center">
+<a href="https://era.zksync.io/docs/tools/testing/era-test-node.html">
 
+![era-test-node](./.github/assets/era_test_node_banner_light.png#gh-light-mode-only)
+![Webb Logo](./.github/assets/era_test_node_banner_dark.png#gh-dark-mode-only)
+</a>
 
+  </div>
 
-# Old version below
-
-
-
-
-## In memory node, with fork support
+# 🚀 zkSync Era In-Memory Node 🚀
 
 This crate provides an in-memory node that supports forking the state from other networks.
 
 The goal of this crate is to offer a fast solution for integration testing, bootloader and system contract testing, and
 prototyping.
 
-Please note that this crate is still in the alpha stage, and not all functionality is fully supported. For final
-testing, it is highly recommended to use the 'local-node' or a testnet.
+🔗 For a detailed walkthrough, refer to the [official documentation](https://era.zksync.io/docs/tools/testing/era-test-node.html).
 
-Current limitations:
+## 📌 Overview
 
-- No communication between Layer 1 and Layer 2 (the local node operates only on Layer 2).
-- Many APIs are not yet implemented, but the basic set of APIs is supported.
-- No support for accessing historical data, such as the storage state at a specific block.
-- Only one transaction is allowed per Layer 1 batch.
-- Fixed values are returned for zk Gas estimation.
+The In-Memory Node is designed for local testing and uses an in-memory database for storing state information. It also employs simplified hashmaps for tracking blocks and transactions. When in fork mode, it fetches missing storage data from a remote source if not available locally. Additionally, it uses the remote server (openchain) to resolve the ABI and topics to human-readable names.
 
-Current features:
+## ⚠️ Caution
 
-- Can fork the state of the mainnet, testnet, or a custom network at any given height.
-- Can replay the existing mainnet, testnet transaaction.
-- Uses local bootloader and system contracts, making it suitable for testing new changes.
-- When running in non-fork mode, it operates deterministically (only one transaction per block, etc.), which simplifies
-  testing.
-- Starts up quickly and comes pre-configured with a few 'rich' accounts.
-- Supports hardhat's console.log debugging.
-- Can resolve the names of ABI functions and Events (using openchain)
+Please note that `era-test-node` is still in its **alpha** stage. Some features might not be fully supported yet and may not work as intended. However, it is open-sourced, and contributions are welcome!
 
-## Installation
+## 📊 Limitations & Features
 
-The easiest way is to install from source:
-```
-cargo install --git https://github.com/mm-zk/era-test-node.git
-```
+| 🚫 Limitations                                  | ✅ Features                                                 |
+| ----------------------------------------------- | ----------------------------------------------------------- |
+| No communication between Layer 1 and Layer 2.   | Can fork the state of mainnet, testnet, or custom network.  |
+| Many APIs are not yet implemented.              | Can replay existing mainnet or testnet transactions.        |
+| No support for accessing historical data.       | Uses local bootloader and system contracts.                 |
+| Only one transaction allowed per Layer 1 batch. | Operates deterministically in non-fork mode.                |
+| Fixed values returned for zk Gas estimation.    | Starts up quickly with pre-configured 'rich' accounts.      |
+| Redeploy requires MetaMask cache reset.         | Supports hardhat's console.log debugging.                   |
+|                                                 | Resolves names of ABI functions and Events using openchain. |
 
-Rust should install it in ``~/.cargo/bin`` directory.
+## 🛠 Prerequisites
 
-If you get compile errors due to rocksDB, you might also want to install:
+1. **Rust**: `era-test-node` is written in Rust. Ensure you have Rust installed on your machine. [Download Rust here](https://www.rust-lang.org/tools/install).
 
-```
-apt-get install -y cmake pkg-config libssl-dev clang
-```
+2. **Other Dependencies**: This crate relies on rocksDB. If you face any compile errors due to rocksDB, install the necessary dependencies with:
+   ```bash
+   apt-get install -y cmake pkg-config libssl-dev clang
+   ```
 
-## How to
+## 📥 Installation & Setup
 
-To start a node:
+1. Install `era-test-node`:
+   ```bash
+   cargo install --git https://github.com/matter-labs/era-test-node.git --locked
+   ```
+2. Start the node:
+   ```bash
+   era_test_node run
+   ```
 
-```shell
-zksync_test_node run
-```
+## 🌐 Network Details
 
-This will run a node (with an empty state) and make it available on port 8011
+- L2 RPC: http://localhost:8011
+- Network Id: 260
 
-To fork mainnet:
+> Note: The existing implementation does not support communication with Layer 1. As a result, an L1 RPC is not available.
 
-```shell
-zksync_test_node fork mainnet
-```
+## 🍴 Forking Networks
 
-This will run the node, forked at current head of mainnet
+To fork the mainnet:
 
-You can also specify the custom http endpoint and custom forking height:
-
-```shell
-zksync_test_node fork --fork-at 7000000 http://172.17.0.3:3060
+```bash
+era_test_node fork mainnet
 ```
 
-Or replay locally a remote transaction (for example to see more debug
-information).
+> Tip: You can also fork the testnet with `era_test_node fork testnet`.
 
-```shell
-zksync_test_node replay_tx testnet 0x7f039bcbb1490b855be37e74cf2400503ad57f51c84856362f99b0cbf1ef478a
+## 🔄 Replay Remote Transactions Locally
+
+If you wish to replay a remote transaction locally for deep debugging, use the following command:
+
+```bash
+era_test_node replay_tx testnet 0x7f039bcbb1490b855be37e74cf2400503ad57f51c84856362f99b0cbf1ef478a
 ```
 
+## 📞 Sending Network Calls
 
-## Seeing more details of the transactions
+You can send network calls against a running `era-test-node`. For example, to check the testnet LINK balance or mainnet USDT, use `curl` or `foundry-zksync`.
+
+```bash
+curl -X POST -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","method":"eth_call","params":[{"to":"0x40609141Db628BeEE3BfAB8034Fc2D8278D0Cc78", "data":"0x06fdde03"}, "latest"],"id":1}' http://localhost:8011
+```
+
+## 🔍 Seeing more details of the transactions
 
 By default, the tool is just printing the basic information about the executed transactions (like status, gas used etc).
 
-But with `--show-calls` flag, it can print more detailed call traces, and with --resolve-hashes, it will ask openchain for ABI names.
+But with --show-calls flag, it can print more detailed call traces, and with --resolve-hashes, it will ask openchain for ABI names.
 
-```shell
-$ zksync_test_node --show-calls=user --resolve-hashes replay_tx testnet 0x7f039bcbb1490b855be37e74cf2400503ad57f51c84856362f99b0cbf1ef478a
-
+```bash
+era_test_node --show-calls=user --resolve-hashes replay_tx testnet 0x7f039bcbb1490b855be37e74cf2400503ad57f51c84856362f99b0cbf1ef478a
 
 Executing 0x7f039bcbb1490b855be37e74cf2400503ad57f51c84856362f99b0cbf1ef478a
 Transaction: SUCCESS
@@ -107,64 +112,27 @@ Call(Normal) 0x55362182242a4de20ea8a0ec055b2134bb24e23d 0xdf9c1589   624834
 
 ```
 
+## 💰 Using Rich Wallets
 
-## Forking network & sending calls
+For testing and development purposes, the `era-test-node` comes pre-configured with a set of 'rich' wallets. These wallets are loaded with test funds, allowing you to simulate transactions and interactions without the need for real assets.
 
-You can use your favorite development tool (or tools like `curl`) or zksync-foundry:
+Here's a list of the available rich wallets:
 
-Check testnet LINK balance
+| Account Address                              | Private Key                                                          |
+| -------------------------------------------- | -------------------------------------------------------------------- |
+| `0x36615Cf349d7F6344891B1e7CA7C72883F5dc049` | `0x7726827caac94a7f9e1b160f7ea819f172f7b6f9d2a97f992c38edeab82d4110` |
+| `0xa61464658AfeAf65CccaaFD3a512b69A83B77618` | `0xac1e735be8536c6534bb4f17f06f6afc73b2b5ba84ac2cfb12f7461b20c0bbe3` |
+| `0x0D43eB5B8a47bA8900d84AA36656c92024e9772e` | `0xd293c684d884d56f8d6abd64fc76757d3664904e309a0645baf8522ab6366d9e` |
+| `0xA13c10C0D5bd6f79041B9835c63f91de35A15883` | `0x850683b40d4a740aa6e745f889a6fdc8327be76e122f5aba645a5b02d0248db8` |
 
-```shell
-$ zksync_test_node fork testnet
+Feel free to use these wallets in your tests, but remember, they are for development purposes only and should not be used in production or with real assets.
 
-$ zkcast call 0x40609141Db628BeEE3BfAB8034Fc2D8278D0Cc78 "name()(string)" --rpc-url http://localhost:8011
+## 🔧 Supported APIs
 
-> ChainLink Token (goerli)
+See our list of [Supported APIs here](SUPPORTED_APIS.md).
 
+## 🤝 Contributing
 
-$ zkcast call 0x40609141Db628BeEE3BfAB8034Fc2D8278D0Cc78 "balanceOf(address)(uint256)"  0x40609141Db628BeEE3BfAB8034Fc2D8278D0Cc78  --rpc-url http://localhost:8011
-> 28762283719732275444443116625665
-```
+We welcome contributions from the community! If you're interested in contributing to the zkSync Era In-Memory Node, please take a look at our [CONTRIBUTING.md](./.github/CONTRIBUTING.md) for guidelines and details on the process.
 
-Or Mainnet USDT:
-
-```shell
-zksync_test_node fork mainnet
-
-zkcast call 0x493257fD37EDB34451f62EDf8D2a0C418852bA4C "name()(string)" --rpc-url http://localhost:8011
-
-> Tether USD
-```
-
-And you can also build & deploy your own contracts:
-
-```shell
-zkforge zkc src/Greeter.sol:Greeter --constructor-args "ZkSync and Foundry" --private-key 7726827caac94a7f9e1b160f7ea819f172f7b6f9d2a97f992c38edeab82d4110 --rpc-url http://localhost:8011 --chain 270
-
-```
-
-## Testing bootloader & system contracts
-
-In-memory node is taking the currently compiled bootloader & system contracts - therefore easily allowing to test
-changes (and together with fork, allows to see the effects of the changes on the already deployed contracts).
-
-You can see the bootloader logs, by setting the proper log level. In the example below, we recompile the bootloader, and
-run it with mainnet fork.
-
-```shell
-
-cd etc/system-contracts
-yarn preprocess && yarn hardhat run ./scripts/compile-yul.ts
-cd -
-RUST_LOG=vm=trace cargo run -p zksync_test_node fork --dev_use_local_contracts --fork-at 70000000 testnet
-```
-
-
-### How does it work
-
-It utilizes an in-memory database to store the state information and employs simplified hashmaps to track blocks and
-transactions.
-
-In fork mode, it attempts to retrieve missing storage data from a remote source when it's not available locally.
-
-Moreover it also uses the remote server (openchain) to resolve the ABI and topics to human readable names.
+Thank you for making zkSync Era In-Memory Node better! 🙌

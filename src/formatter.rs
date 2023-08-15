@@ -5,8 +5,8 @@ use colored::Colorize;
 use serde::Deserialize;
 use std::collections::HashMap;
 
+use crate::fork::block_on;
 use zksync_basic_types::H160;
-use zksync_core::block_on;
 
 use zksync_types::{vm_trace::Call, VmEvent};
 
@@ -67,15 +67,15 @@ pub fn print_event(event: &VmEvent, resolve_hashes: bool) {
                 ))
                 .await
                 .unwrap();
-                tt.push(selector.unwrap_or(topic.to_string()));
+                tt.push(selector.unwrap_or(format!("{:?}", topic)));
             }
         }
 
         println!(
             "{} {}",
             address_to_human_readable(event.address)
-                .map(|x| format!("{:42}", x))
-                .unwrap_or(format!("{:?}", event.address)),
+                .map(|x| format!("{:42}", x.blue()))
+                .unwrap_or(format!("{:42}", format!("{:?}", event.address).blue())),
             tt.join(", ")
         );
     });
@@ -110,11 +110,11 @@ pub fn print_call(call: &Call, padding: usize, show_calls: &ShowCalls, resolve_h
                 .join("");
 
             if contract_type == ContractType::Precompile || !resolve_hashes {
-                sig
+                format!("{:>16}", sig)
             } else {
                 block_on(async move {
                     let fetch = resolver::decode_function_selector(&sig).await.unwrap();
-                    fetch.unwrap_or(format!("{}", format!("0x{}", sig).dimmed()))
+                    fetch.unwrap_or(format!("{:>16}", format!("0x{}", sig).dimmed()))
                 })
             }
         } else {
@@ -129,24 +129,30 @@ pub fn print_call(call: &Call, padding: usize, show_calls: &ShowCalls, resolve_h
             )
         };
 
-        println!(
+        let pretty_print = format!(
             "{}{:?} {} {} {} {} {}",
             " ".repeat(padding),
             call.r#type,
             address_to_human_readable(call.to)
-                .map(|x| format!("{:42}", x))
-                .unwrap_or(format!("{}", format!("{:?}", call.to).bold())),
+                .map(|x| format!("{:<52}", x))
+                .unwrap_or(format!("{:<52}", format!("{:?}", call.to).bold()).to_string()),
             function_signature,
             call.revert_reason
                 .as_ref()
-                .map(|s| format!("Revert: {}", s.red()))
+                .map(|s| format!("Revert: {}", s))
                 .unwrap_or("".to_string()),
             call.error
                 .as_ref()
-                .map(|s| format!("Error: {}", s.red()))
+                .map(|s| format!("Error: {}", s))
                 .unwrap_or("".to_string()),
             call.gas
         );
+
+        if call.revert_reason.as_ref().is_some() || call.error.as_ref().is_some() {
+            println!("{}", pretty_print.on_red());
+        } else {
+            println!("{}", pretty_print);
+        }
     }
     for subcall in &call.calls {
         print_call(subcall, padding + 2, show_calls, resolve_hashes);

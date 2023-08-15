@@ -1,0 +1,35 @@
+name: run
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  test:
+    name: unit-tests
+    strategy:
+      matrix:
+        platform: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with: 
+        toolchain: stable
+
+    - name: Cache Rust Dependencies
+      uses: Swatinem/rust-cache@v2
+    
+    - name: Install cargo-nextest
+      run: cargo +stable install cargo-nextest
+        
+    - name: Run tests
+      run: cargo nextest run
