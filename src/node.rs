@@ -756,7 +756,7 @@ impl EthNamespaceT for InMemoryNode {
                 root: None,
                 logs_bloom: Default::default(),
                 transaction_type: None,
-                effective_gas_price: Some(500.into()),
+                effective_gas_price: Some(250_000_000.into()),
             }
         });
 
