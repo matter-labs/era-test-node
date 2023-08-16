@@ -655,15 +655,7 @@ impl InMemoryNode {
 
         match vm_block_result.full_result.revert_reason {
             Some(result) => Ok(result.original_data),
-            None => Ok(vm_block_result
-                .full_result
-                .return_data
-                .into_iter()
-                .flat_map(|val| {
-                    let bytes: [u8; 32] = val.into();
-                    bytes.to_vec()
-                })
-                .collect::<Vec<_>>()),
+            None => Ok(vm_block_result.full_result.return_data),
         }
     }
 
