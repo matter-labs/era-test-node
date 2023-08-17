@@ -18,6 +18,13 @@ object "EcAdd" {
                 one := 0x1
             }
 
+            /// @notice Constant function for value three in Montgomery form.
+            /// @dev This value was precomputed using Python.
+            /// @return m_three The value three in Montgomery form.
+            function MONTGOMERY_THREE() -> m_three {
+                m_three := 19052624634359457937016868847204597229365286637454337178037183604060995791063
+            }
+
             /// @notice Constant function for the alt_bn128 group order.
             /// @dev See https://eips.ethereum.org/EIPS/eip-196 for further details.
             /// @return ret The alt_bn128 group order.
@@ -91,14 +98,14 @@ object "EcAdd" {
             // @notice Checks if a point is on the curve.
             // @dev The curve in question is the alt_bn128 curve.
             // @dev The Short Weierstrass equation of the curve is y^2 = x^3 + 3.
-            // @param x The x coordinate of the point.
-            // @param y The y coordinate of the point.
+            // @param x The x coordinate of the point in Montgomery form.
+            // @param y The y coordinate of the point in Montgomery form.
             // @return ret True if the point is on the curve, false otherwise.
             function pointIsInCurve(x, y) -> ret {
-                let y_squared := mulmod(y, y, ALT_BN128_GROUP_ORDER())
-                let x_squared := mulmod(x, x, ALT_BN128_GROUP_ORDER())
-                let x_qubed := mulmod(x_squared, x, ALT_BN128_GROUP_ORDER())
-                let x_qubed_plus_three := addmod(x_qubed, 3, ALT_BN128_GROUP_ORDER())
+                let y_squared := montgomeryMul(y, y)
+                let x_squared := montgomeryMul(x, x)
+                let x_qubed := montgomeryMul(x_squared, x)
+                let x_qubed_plus_three := addmod(x_qubed, MONTGOMERY_THREE(), ALT_BN128_GROUP_ORDER())
 
                 ret := eq(y_squared, x_qubed_plus_three)
             }
@@ -293,11 +300,17 @@ object "EcAdd" {
                     revert(0, 0)
                 }
 
+                let m_x2 := intoMontgomeryForm(x2)
+                let m_y2 := intoMontgomeryForm(y2)
+
                 // Ensure that the point is in the curve (Y^2 = X^3 + 3).
-                if iszero(pointIsInCurve(x2, y2)) {
+                if iszero(pointIsInCurve(m_x2, m_y2)) {
                     burnGas()
                     revert(0, 0)
                 }
+
+                // We just need to go into the Montgomery form to perform the
+                // computations in pointIsInCurve, but we do not need to come back.
 
                 mstore(0, x2)
                 mstore(32, y2)
@@ -312,11 +325,17 @@ object "EcAdd" {
                     revert(0, 0)
                 }
 
+                let m_x1 := intoMontgomeryForm(x1)
+                let m_y1 := intoMontgomeryForm(y1)
+
                 // Ensure that the point is in the curve (Y^2 = X^3 + 3).
-                if iszero(pointIsInCurve(x1, y1)) {
+                if iszero(pointIsInCurve(m_x1, m_y1)) {
                     burnGas()
                     revert(0, 0)
                 }
+
+                // We just need to go into the Montgomery form to perform the
+                // computations in pointIsInCurve, but we do not need to come back.
 
                 mstore(0, x1)
                 mstore(32, y1)
@@ -335,23 +354,30 @@ object "EcAdd" {
                 revert(0, 0)
             }
 
-            // Ensure that the points are in the curve (Y^2 = X^3 + 3).
-            if or(iszero(pointIsInCurve(x1, y1)), iszero(pointIsInCurve(x2, y2))) {
-                burnGas()
-                revert(0, 0)
-            }
-
             // There's no need for transforming into Montgomery form
             // for this case.
             if and(eq(x1, x2), eq(submod(0, y1, ALT_BN128_GROUP_ORDER()), y2)) {
                 // P + (-P) = Infinity
 
+                let m_x1 := intoMontgomeryForm(x1)
+                let m_y1 := intoMontgomeryForm(y1)
+                let m_x2 := intoMontgomeryForm(x2)
+                let m_y2 := intoMontgomeryForm(y2)
+
+                // Ensure that the points are in the curve (Y^2 = X^3 + 3).
+                if or(iszero(pointIsInCurve(m_x1, m_y1)), iszero(pointIsInCurve(m_x2, m_y2))) {
+                    burnGas()
+                    revert(0, 0)
+                }
+
+                // We just need to go into the Montgomery form to perform the
+                // computations in pointIsInCurve, but we do not need to come back.
+
                 mstore(0, ZERO())
                 mstore(32, ZERO())
                 return(0, 64)
             }
-            // There's no need for transforming into Montgomery form
-            // for this case.
+
             if and(eq(x1, x2), and(iszero(eq(y1, y2)), iszero(eq(y1, submod(0, y2, ALT_BN128_GROUP_ORDER()))))) {
                 burnGas()
                 revert(0, 0)
@@ -362,6 +388,12 @@ object "EcAdd" {
 
                 let x := intoMontgomeryForm(x1)
                 let y := intoMontgomeryForm(y1)
+
+                // Ensure that the points are in the curve (Y^2 = X^3 + 3).
+                if iszero(pointIsInCurve(x, y)) {
+                    burnGas()
+                    revert(0, 0)
+                }
 
                 // (3 * x1^2 + a) / (2 * y1)
                 let x1_squared := montgomeryMul(x, x)
@@ -385,6 +417,12 @@ object "EcAdd" {
             y1 := intoMontgomeryForm(y1)
             x2 := intoMontgomeryForm(x2)
             y2 := intoMontgomeryForm(y2)
+
+            // Ensure that the points are in the curve (Y^2 = X^3 + 3).
+            if or(iszero(pointIsInCurve(x1, y1)), iszero(pointIsInCurve(x2, y2))) {
+                burnGas()
+                revert(0, 0)
+            }
 
             // (y2 - y1) / (x2 - x1)
             let slope := montgomeryDiv(submod(y2, y1, ALT_BN128_GROUP_ORDER()), submod(x2, x1, ALT_BN128_GROUP_ORDER()))
