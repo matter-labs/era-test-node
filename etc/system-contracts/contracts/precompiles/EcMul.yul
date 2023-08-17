@@ -37,6 +37,13 @@ object "EcMul" {
                 m_one := 6350874878119819312338956282401532409788428879151445726012394534686998597021
             }
 
+            /// @notice Constant function for value three in Montgomery form.
+            /// @dev This value was precomputed using Python.
+            /// @return m_three The value three in Montgomery form.
+            function MONTGOMERY_THREE() -> m_three {
+                m_three := 19052624634359457937016868847204597229365286637454337178037183604060995791063
+            }
+
             /// @notice Constant function for the alt_bn128 group order.
             /// @dev See https://eips.ethereum.org/EIPS/eip-196 for further details.
             /// @return ret The alt_bn128 group order.
@@ -116,14 +123,14 @@ object "EcMul" {
             // @notice Checks if a point is on the curve.
             // @dev The curve in question is the alt_bn128 curve.
             // @dev The Short Weierstrass equation of the curve is y^2 = x^3 + 3.
-            // @param x The x coordinate of the point.
-            // @param y The y coordinate of the point.
+            // @param x The x coordinate of the point in Montgomery form.
+            // @param y The y coordinate of the point in Montgomery form.
             // @return ret True if the point is on the curve, false otherwise.
             function pointIsInCurve(x, y) -> ret {
-                let ySquared := mulmod(y, y, ALT_BN128_GROUP_ORDER())
-                let xSquared := mulmod(x, x, ALT_BN128_GROUP_ORDER())
-                let xQubed := mulmod(xSquared, x, ALT_BN128_GROUP_ORDER())
-                let xQubedPlusThree := addmod(xQubed, THREE(), ALT_BN128_GROUP_ORDER())
+                let ySquared := montgomeryMul(y, y)
+                let xSquared := montgomeryMul(x, x)
+                let xQubed := montgomeryMul(xSquared, x)
+                let xQubedPlusThree := addmod(xQubed, MONTGOMERY_THREE(), ALT_BN128_GROUP_ORDER())
 
                 ret := eq(ySquared, xQubedPlusThree)
             }
@@ -360,8 +367,11 @@ object "EcMul" {
                 revert(0, 0)
             }
 
+            let m_x := intoMontgomeryForm(x)
+            let m_y := intoMontgomeryForm(y)
+
             // Ensure that the point is in the curve (Y^2 = X^3 + 3).
-            if iszero(pointIsInCurve(x, y)) {
+            if iszero(pointIsInCurve(m_x, m_y)) {
                 burnGas()
                 revert(0, 0)
             }
@@ -379,11 +389,8 @@ object "EcMul" {
                 return(0, 64)
             }
 
-            x := intoMontgomeryForm(x)
-            y := intoMontgomeryForm(y)
-
             if eq(scalar, TWO()) {
-                let x2, y2 := montgomeryDouble(x, y)
+                let x2, y2 := montgomeryDouble(m_x, m_y)
 
                 x2 := outOfMontgomeryForm(x2)
                 y2 := outOfMontgomeryForm(y2)
@@ -393,8 +400,8 @@ object "EcMul" {
                 return(0, 64)
             }
 
-            let x2 := x
-            let y2 := y
+            let x2 := m_x
+            let y2 := m_y
             let xRes := ZERO()
             let yRes := ZERO()
             for {} scalar {} {
