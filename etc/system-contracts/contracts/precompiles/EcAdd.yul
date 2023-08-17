@@ -102,12 +102,12 @@ object "EcAdd" {
             // @param y The y coordinate of the point in Montgomery form.
             // @return ret True if the point is on the curve, false otherwise.
             function pointIsInCurve(x, y) -> ret {
-                let y_squared := montgomeryMul(y, y)
-                let x_squared := montgomeryMul(x, x)
-                let x_qubed := montgomeryMul(x_squared, x)
-                let x_qubed_plus_three := addmod(x_qubed, MONTGOMERY_THREE(), ALT_BN128_GROUP_ORDER())
+                let ySquared := montgomeryMul(y, y)
+                let xSquared := montgomeryMul(x, x)
+                let xQubed := montgomeryMul(xSquared, x)
+                let xQubedPlusThree := addmod(xQubed, MONTGOMERY_THREE(), ALT_BN128_GROUP_ORDER())
 
-                ret := eq(y_squared, x_qubed_plus_three)
+                ret := eq(ySquared, xQubedPlusThree)
             }
 
             /// @notice Checks if a point is the point at infinity.
@@ -117,7 +117,7 @@ object "EcAdd" {
             /// @param y The y coordinate of the point.
             /// @return ret True if the point is the point at infinity, false otherwise.
             function isInfinity(x, y) -> ret {
-                ret := and(eq(x, ZERO()), eq(y, ZERO()))
+                ret := and(iszero(x), iszero(y))
             }
 
             /// @notice Checks if a coordinate is on the curve group order.
@@ -126,7 +126,7 @@ object "EcAdd" {
             /// @param coordinate The coordinate to check.
             /// @return ret True if the coordinate is in the range, false otherwise.
             function isOnGroupOrder(coordinate) -> ret {
-                ret := lt(coordinate, sub(ALT_BN128_GROUP_ORDER(), ONE()))
+                ret := lt(coordinate, ALT_BN128_GROUP_ORDER())
             }
 
             function binaryExtendedEuclideanAlgorithm(base) -> inv {

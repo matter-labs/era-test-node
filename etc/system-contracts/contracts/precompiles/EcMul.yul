@@ -150,8 +150,8 @@ object "EcMul" {
             /// @dev This check is required in the precompile specification. See https://eips.ethereum.org/EIPS/eip-196 for further details.
             /// @param coordinate The coordinate to check.
             /// @return ret True if the coordinate is in the range, false otherwise.
-            function isOnGroupOrder(num) -> ret {
-                ret := lt(num, ALT_BN128_GROUP_ORDER_MINUS_ONE())
+            function isOnGroupOrder(coordinate) -> ret {
+                ret := lt(coordinate, ALT_BN128_GROUP_ORDER())
             }
 
             /// @notice Checks if the LSB of a number is 1.
