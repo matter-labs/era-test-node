@@ -6,30 +6,46 @@ object "EcAdd" {
             //                      CONSTANTS
             ////////////////////////////////////////////////////////////////
 
+            /// @notice Constant function for value zero.
+            /// @return zero The value zero.
             function ZERO() -> zero {
                 zero := 0x0
             }
 
+            /// @notice Constant function for value one.
+            /// @return one The value one.
             function ONE() -> one {
                 one := 0x1
             }
 
-            // Group order of alt_bn128, see https://eips.ethereum.org/EIPS/eip-196
+            /// @notice Constant function for the alt_bn128 group order.
+            /// @dev See https://eips.ethereum.org/EIPS/eip-196 for further details.
+            /// @return ret The alt_bn128 group order.
             function ALT_BN128_GROUP_ORDER() -> ret {
                 ret := 21888242871839275222246405745257275088696311157297823662689037894645226208583
             }
 
+            /// @notice Constant function for the pre-computation of R^2 % N for the Montgomery REDC algorithm.
+            /// @dev R^2 is the Montgomery residue of the value 2^512.
+            /// @dev See https://en.wikipedia.org/wiki/Montgomery_modular_multiplication#The_REDC_algorithm for further detals.
+            /// @dev This value was precomputed using Python.
+            /// @return ret The value R^2 modulus the curve group order.
             function R2_MOD_ALT_BN128_GROUP_ORDER() -> ret {
                 ret := 3096616502983703923843567936837374451735540968419076528771170197431451843209
             }
 
+            /// @notice Constant function for the pre-computation of N' for the Montgomery REDC algorithm.
+            /// @dev N' is a value such that NN' = -1 mod R, with N being the curve group order.
+            /// @dev See https://en.wikipedia.org/wiki/Montgomery_modular_multiplication#The_REDC_algorithm for further detals.
+            /// @dev This value was precomputed using Python.
+            /// @return ret The value N'.
             function N_PRIME() -> ret {
                 ret := 111032442853175714102588374283752698368366046808579839647964533820976443843465
             }
 
-            // ////////////////////////////////////////////////////////////////
+            //////////////////////////////////////////////////////////////////
             //                      HELPER FUNCTIONS
-            // ////////////////////////////////////////////////////////////////
+            //////////////////////////////////////////////////////////////////
 
             /// @dev Executes the `precompileCall` opcode.
             function precompileCall(precompileParams, gasToBurn) -> ret {
@@ -37,26 +53,47 @@ object "EcAdd" {
                 ret := verbatim_2i_1o("precompile", precompileParams, gasToBurn)
             }
 
+            /// @notice Burns remaining gas until revert.
+            /// @dev This function is used to burn gas in the case of a failed precompile call.
             function burnGas() {
                 // Precompiles that do not have a circuit counterpart
                 // will burn the provided gas by calling this function.
                 precompileCall(0, gas())
             }
 
+            /// @notice Retrieves the highest half of the multiplication result.
+            /// @param multiplicand The value to multiply.
+            /// @param multiplier The multiplier.
+            /// @return ret The highest half of the multiplication result.
             function getHighestHalfOfMultiplication(multiplicand, multiplier) -> ret {
                 ret := verbatim_2i_1o("mul_high", multiplicand, multiplier)
             }
 
+            /// @notice Computes the modular subtraction of two values.
+            /// @param minuend The value to subtract from.
+            /// @param subtrahend The value to subtract.
+            /// @param modulus The modulus.
+            /// @return difference The modular subtraction of the two values.
             function submod(minuend, subtrahend, modulus) -> difference {
                 difference := addmod(minuend, sub(modulus, subtrahend), modulus)
             }
 
+            /// @notice Computes an addition and checks for overflow.
+            /// @param augend The value to add to.
+            /// @param addend The value to add.
+            /// @return sum The sum of the two values.
+            /// @return overflowed True if the addition overflowed, false otherwise.
             function overflowingAdd(augend, addend) -> sum, overflowed {
                 sum := add(augend, addend)
                 overflowed := or(lt(sum, augend), lt(sum, addend))
             }
 
-            // Returns 1 if (x, y) is in the curve, 0 otherwise
+            // @notice Checks if a point is on the curve.
+            // @dev The curve in question is the alt_bn128 curve.
+            // @dev The Short Weierstrass equation of the curve is y^2 = x^3 + 3.
+            // @param x The x coordinate of the point.
+            // @param y The y coordinate of the point.
+            // @return ret True if the point is on the curve, false otherwise.
             function pointIsInCurve(x, y) -> ret {
                 let y_squared := mulmod(y, y, ALT_BN128_GROUP_ORDER())
                 let x_squared := mulmod(x, x, ALT_BN128_GROUP_ORDER())
@@ -66,12 +103,23 @@ object "EcAdd" {
                 ret := eq(y_squared, x_qubed_plus_three)
             }
 
+            /// @notice Checks if a point is the point at infinity.
+            /// @dev The point at infinity is defined as the point (0, 0).
+            /// @dev See https://eips.ethereum.org/EIPS/eip-196 for further details.
+            /// @param x The x coordinate of the point.
+            /// @param y The y coordinate of the point.
+            /// @return ret True if the point is the point at infinity, false otherwise.
             function isInfinity(x, y) -> ret {
                 ret := and(eq(x, ZERO()), eq(y, ZERO()))
             }
 
-            function isOnGroupOrder(num) -> ret {
-                ret := lt(num, sub(ALT_BN128_GROUP_ORDER(), ONE()))
+            /// @notice Checks if a coordinate is on the curve group order.
+            /// @dev A coordinate is on the curve group order if it is on the range [0, curveGroupOrder).
+            /// @dev This check is required in the precompile specification. See https://eips.ethereum.org/EIPS/eip-196 for further details.
+            /// @param coordinate The coordinate to check.
+            /// @return ret True if the coordinate is in the range, false otherwise.
+            function isOnGroupOrder(coordinate) -> ret {
+                ret := lt(coordinate, sub(ALT_BN128_GROUP_ORDER(), ONE()))
             }
 
             function binaryExtendedEuclideanAlgorithm(base) -> inv {
@@ -150,7 +198,11 @@ object "EcAdd" {
                 }
             }
 
-            // https://en.wikipedia.org/wiki/Montgomery_modular_multiplication//The_REDC_algorithm
+            /// @notice Implementation of the Montgomery reduction algorithm (a.k.a. REDC).
+            /// @dev See https://en.wikipedia.org/wiki/Montgomery_modular_multiplication//The_REDC_algorithm
+            /// @param lowestHalfOfT The lowest half of the value T.
+            /// @param higherHalfOfT The higher half of the value T.
+            /// @return S The result of the Montgomery reduction.
             function REDC(lowestHalfOfT, higherHalfOfT) -> S {
                 let q := mul(lowestHalfOfT, N_PRIME())
                 let aHigh := add(higherHalfOfT, getHighestHalfOfMultiplication(q, ALT_BN128_GROUP_ORDER()))
@@ -164,31 +216,51 @@ object "EcAdd" {
                 }
             }
 
-            // Transforming into the Montgomery form -> REDC((a mod N)(R2 mod N))
+            /// @notice Encodes a field element into the Montgomery form using the Montgomery reduction algorithm (REDC).
+            /// @dev See https://en.wikipedia.org/wiki/Montgomery_modular_multiplication//The_REDC_algorithmfor further details on transforming a field element into the Montgomery form.
+            /// @param a The field element to encode.
+            /// @return ret The field element in Montgomery form.
             function intoMontgomeryForm(a) -> ret {
                 let higherHalf := getHighestHalfOfMultiplication(mod(a, ALT_BN128_GROUP_ORDER()), R2_MOD_ALT_BN128_GROUP_ORDER())
                 let lowestHalf := mul(mod(a, ALT_BN128_GROUP_ORDER()), R2_MOD_ALT_BN128_GROUP_ORDER())
                 ret := REDC(lowestHalf, higherHalf)
             }
 
-            // Transforming out of the Montgomery form -> REDC(a * R mod N)
+            /// @notice Decodes a field element out of the Montgomery form using the Montgomery reduction algorithm (REDC).
+            /// @dev See https://en.wikipedia.org/wiki/Montgomery_modular_multiplication//The_REDC_algorithm for further details on transforming a field element out of the Montgomery form.
+            /// @param m The field element in Montgomery form to decode.
+            /// @return ret The decoded field element.
             function outOfMontgomeryForm(m) -> ret {
                 let higherHalfOf := ZERO()
                 let lowestHalf := m
                 ret := REDC(lowestHalf, higherHalfOf)
             }
 
-            // Multipling field elements in Montgomery form -> REDC((a * R mod N)(b * R mod N))
+            /// @notice Computes the Montgomery multiplication using the Montgomery reduction algorithm (REDC).
+            /// @dev See https://en.wikipedia.org/wiki/Montgomery_modular_multiplication//The_REDC_algorithm for further details on the Montgomery multiplication.
+            /// @param multiplicand The multiplicand in Montgomery form.
+            /// @param multiplier The multiplier in Montgomery form.
+            /// @return ret The result of the Montgomery multiplication.
             function montgomeryMul(multiplicand, multiplier) -> ret {
                 let higherHalfOfProduct := getHighestHalfOfMultiplication(multiplicand, multiplier)
                 let lowestHalfOfProduct := mul(multiplicand, multiplier)
                 ret := REDC(lowestHalfOfProduct, higherHalfOfProduct)
             }
 
+            /// @notice Computes the Montgomery modular inverse skipping the Montgomery reduction step.
+            /// @dev The Montgomery reduction step is skept because a modification in the binary extended Euclidean algorithm is used to compute the modular inverse.
+            /// @dev See the function `binaryExtendedEuclideanAlgorithm` for further details.
+            /// @param a The field element in Montgomery form to compute the modular inverse of.
+            /// @return invmod The result of the Montgomery modular inverse (in Montgomery form).
             function montgomeryModularInverse(a) -> invmod {
                 invmod := binaryExtendedEuclideanAlgorithm(a)
             }
 
+            /// @notice Computes the Montgomery division.
+            /// @dev The Montgomery division is computed by multiplying the dividend with the modular inverse of the divisor.
+            /// @param dividend The dividend in Montgomery form.
+            /// @param divisor The divisor in Montgomery form.
+            /// @return quotient The result of the Montgomery division.
             function montgomeryDiv(dividend, divisor) -> quotient {
                 quotient := montgomeryMul(dividend, montgomeryModularInverse(divisor))
             }
