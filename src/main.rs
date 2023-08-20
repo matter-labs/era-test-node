@@ -43,22 +43,11 @@
 //! Contributions to improve `era-test-node` are welcome. Please refer to the contribution guidelines for more details.
 
 use clap::{Parser, Subcommand};
-use configuration_api::ConfigurationApiNamespaceT;
-use fork::ForkDetails;
-use zks::ZkMockNamespaceImpl;
 
-mod configuration_api;
-mod console_log;
-mod deps;
-mod fork;
-mod formatter;
-mod node;
-mod resolver;
-mod utils;
-mod zks;
-
-use core::fmt::Display;
-use node::InMemoryNode;
+use era_test_node::{
+    configuration_api::ConfigurationApiNamespaceT, fork::ForkDetails, node::InMemoryNode,
+    zks::ZkMockNamespaceImpl, ShowCalls,
+};
 use zksync_core::api_server::web3::namespaces::NetNamespace;
 
 use std::{
@@ -78,7 +67,7 @@ use futures::{
 use jsonrpc_core::IoHandler;
 use zksync_basic_types::{L2ChainId, H160, H256};
 
-use crate::{configuration_api::ConfigurationApiNamespace, node::TEST_NODE_NETWORK_ID};
+use era_test_node::{configuration_api::ConfigurationApiNamespace, node::TEST_NODE_NETWORK_ID};
 use zksync_core::api_server::web3::backend_jsonrpc::namespaces::{
     eth::EthNamespaceT, net::NetNamespaceT, zks::ZksNamespaceT,
 };
@@ -102,7 +91,7 @@ pub const RICH_WALLETS: [(&str, &str); 4] = [
         "0x850683b40d4a740aa6e745f889a6fdc8327be76e122f5aba645a5b02d0248db8",
     ),
 ];
-
+/*
 async fn build_json_http(
     addr: SocketAddr,
     node: InMemoryNode,
@@ -140,7 +129,7 @@ async fn build_json_http(
 
     tokio::spawn(recv.map(drop))
 }
-
+*/
 #[derive(Debug, Parser)]
 #[command(author = "Matter Labs", version, about = "Test Node", long_about = None)]
 struct Cli {
@@ -161,34 +150,6 @@ struct Cli {
     #[arg(long)]
     /// If true, will load the locally compiled system contracts (useful when doing changes to system contracts or bootloader)
     dev_use_local_contracts: bool,
-}
-
-#[derive(Debug, Parser, Clone, clap::ValueEnum, PartialEq, Eq)]
-pub enum ShowCalls {
-    None,
-    User,
-    System,
-    All,
-}
-
-impl FromStr for ShowCalls {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_ref() {
-            "none" => Ok(ShowCalls::None),
-            "user" => Ok(ShowCalls::User),
-            "system" => Ok(ShowCalls::System),
-            "all" => Ok(ShowCalls::All),
-            _ => Err(()),
-        }
-    }
-}
-
-impl Display for ShowCalls {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(f, "{:?}", self)
-    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -250,17 +211,18 @@ async fn main() -> anyhow::Result<()> {
     // Initialize the subscriber
     tracing::subscriber::set_global_default(subscriber).expect("failed to set tracing subscriber");
 
+    /*
     let fork_details = match &opt.command {
         Command::Run => None,
         Command::Fork(fork) => Some(ForkDetails::from_network(&fork.network, fork.fork_at).await),
         Command::ReplayTx(replay_tx) => {
             Some(ForkDetails::from_network_tx(&replay_tx.network, replay_tx.tx).await)
         }
-    };
+    };*/
 
     // If we're replaying the transaction, we need to sync to the previous block
     // and then replay all the transactions that happened in
-    let transactions_to_replay = if let Command::ReplayTx(replay_tx) = &opt.command {
+    /*let transactions_to_replay = if let Command::ReplayTx(replay_tx) = &opt.command {
         fork_details
             .as_ref()
             .unwrap()
@@ -268,34 +230,35 @@ async fn main() -> anyhow::Result<()> {
             .await
     } else {
         vec![]
-    };
-
-    let node = InMemoryNode::new(
-        fork_details,
+    };*/
+    /*
+    let node: InMemoryNode<'_, _> = InMemoryNode::new(
+        //fork_details,
+        None,
         opt.show_calls,
         opt.resolve_hashes,
         opt.dev_use_local_contracts,
-    );
+    );*/
 
-    if !transactions_to_replay.is_empty() {
+    /*     if !transactions_to_replay.is_empty() {
         let _ = node.apply_txs(transactions_to_replay);
-    }
+    }*/
+    /*
+        println!("\nRich Accounts");
+        println!("=============");
+        for (index, wallet) in RICH_WALLETS.iter().enumerate() {
+            let address = wallet.0;
+            let private_key = wallet.1;
+            node.set_rich_account(H160::from_str(address).unwrap());
+            println!("Account #{}: {} (10000 ETH)", index, address);
+            println!("Private Key: {}\n", private_key);
+        }
 
-    println!("\nRich Accounts");
-    println!("=============");
-    for (index, wallet) in RICH_WALLETS.iter().enumerate() {
-        let address = wallet.0;
-        let private_key = wallet.1;
-        node.set_rich_account(H160::from_str(address).unwrap());
-        println!("Account #{}: {} (10000 ETH)", index, address);
-        println!("Private Key: {}\n", private_key);
-    }
+        let net = NetNamespace::new(L2ChainId(TEST_NODE_NETWORK_ID));
+    */
+    //let config_api = ConfigurationApiNamespace::new(node.get_inner());
 
-    let net = NetNamespace::new(L2ChainId(TEST_NODE_NETWORK_ID));
-
-    let config_api = ConfigurationApiNamespace::new(node.get_inner());
-
-    let threads = build_json_http(
+    /*let threads = build_json_http(
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), opt.port),
         node,
         net,
@@ -307,7 +270,7 @@ async fn main() -> anyhow::Result<()> {
     println!("  Node is ready at 127.0.0.1:{}", opt.port);
     println!("========================================");
 
-    future::select_all(vec![threads]).await.0.unwrap();
+    future::select_all(vec![threads]).await.0.unwrap();*/
 
     Ok(())
 }

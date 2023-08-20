@@ -10,23 +10,23 @@ use jsonrpc_derive::rpc;
 // Local uses
 use crate::{node::InMemoryNodeInner, ShowCalls};
 
-pub struct ConfigurationApiNamespace {
-    node: Arc<RwLock<InMemoryNodeInner>>,
+pub struct ConfigurationApiNamespace<'a, T> {
+    node: Arc<RwLock<InMemoryNodeInner<'a, T>>>,
 }
 
-impl ConfigurationApiNamespace {
-    pub fn new(node: Arc<RwLock<InMemoryNodeInner>>) -> Self {
+impl<'a, T> ConfigurationApiNamespace<'a, T> {
+    pub fn new(node: Arc<RwLock<InMemoryNodeInner<'a, T>>>) -> Self {
         Self { node }
     }
 }
 
-#[rpc]
+//#[rpc]
 pub trait ConfigurationApiNamespaceT {
     /// Get the InMemoryNodeInner's show_calls property as a string
     ///
     /// # Returns
     /// The current `show_calls` value for the InMemoryNodeInner.
-    #[rpc(name = "config_getShowCalls", returns = "String")]
+    //#[rpc(name = "config_getShowCalls", returns = "String")]
     fn config_get_show_calls(&self) -> Result<String>;
 
     /// Set show_calls for the InMemoryNodeInner
@@ -36,7 +36,7 @@ pub trait ConfigurationApiNamespaceT {
     ///
     /// # Returns
     /// The updated/current `show_calls` value for the InMemoryNodeInner.
-    #[rpc(name = "config_setShowCalls", returns = "String")]
+    //#[rpc(name = "config_setShowCalls", returns = "String")]
     fn config_set_show_calls(&self, value: String) -> Result<String>;
 
     /// Set resolve_hashes for the InMemoryNodeInner
@@ -46,11 +46,11 @@ pub trait ConfigurationApiNamespaceT {
     ///
     /// # Returns
     /// The updated `resolve_hashes` value for the InMemoryNodeInner.
-    #[rpc(name = "config_setResolveHashes", returns = "bool")]
+    //#[rpc(name = "config_setResolveHashes", returns = "bool")]
     fn config_set_resolve_hashes(&self, value: bool) -> Result<bool>;
 }
 
-impl ConfigurationApiNamespaceT for ConfigurationApiNamespace {
+impl<'a, T> ConfigurationApiNamespaceT for ConfigurationApiNamespace<'a, T> {
     fn config_get_show_calls(&self) -> Result<String> {
         let reader = self.node.read().unwrap();
         Ok(reader.show_calls.to_string())

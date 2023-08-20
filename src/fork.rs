@@ -6,15 +6,16 @@
 use std::{
     collections::HashMap,
     convert::TryInto,
+    fmt::Debug,
     future::Future,
     sync::{Arc, RwLock},
 };
 
 use tokio::runtime::Builder;
-use zksync_basic_types::{L1BatchNumber, L2ChainId, MiniblockNumber, H256, U64};
+use zksync_basic_types::{L1BatchNumber, L2ChainId, MiniblockNumber, H160, H256, U256, U64};
 
 use zksync_types::{
-    api::{BlockIdVariant, BlockNumber},
+    api::{BlockIdVariant, BlockNumber, Transaction},
     l2::L2Tx,
     StorageKey,
 };
@@ -47,13 +48,13 @@ where
 /// In memory storage, that allows 'forking' from other network.
 /// If forking is enabled, it reads missing data from remote location.
 #[derive(Debug)]
-pub struct ForkStorage {
-    pub inner: Arc<RwLock<ForkStorageInner>>,
+pub struct ForkStorage<'a, T> {
+    pub inner: Arc<RwLock<ForkStorageInner<'a, T>>>,
     pub chain_id: L2ChainId,
 }
 
 #[derive(Debug)]
-pub struct ForkStorageInner {
+pub struct ForkStorageInner<'a, T> {
     // Underlying local storage
     pub raw_storage: InMemoryStorage,
     // Cache of data that was read from remote location.
@@ -62,11 +63,11 @@ pub struct ForkStorageInner {
     pub factory_dep_cache: HashMap<H256, Option<Vec<u8>>>,
     // If set - it hold the necessary information on where to fetch the data.
     // If not set - it will simply read from underlying storage.
-    pub fork: Option<ForkDetails>,
+    pub fork: Option<ForkDetails<'a, T>>,
 }
 
-impl ForkStorage {
-    pub fn new(fork: Option<ForkDetails>, dev_use_local_contracts: bool) -> Self {
+impl<'a, T: RemoteForkProvider> ForkStorage<'a, T> {
+    pub fn new(fork: Option<ForkDetails<'a, T>>, dev_use_local_contracts: bool) -> Self {
         let chain_id = fork
             .as_ref()
             .and_then(|d| d.overwrite_chain_id)
@@ -100,23 +101,20 @@ impl ForkStorage {
             if let Some(value) = mutator.value_read_cache.get(key) {
                 return *value;
             }
-            let fork_ = (*fork).clone();
+            //let fork_ = (*fork).clone();
+            let l2_miniblock = fork.l2_miniblock;
             let key_ = *key;
 
-            let client = fork.create_client();
-
-            let result = block_on(async move {
-                client
-                    .get_storage_at(
-                        *key_.account().address(),
-                        h256_to_u256(*key_.key()),
-                        Some(BlockIdVariant::BlockNumber(BlockNumber::Number(U64::from(
-                            fork_.l2_miniblock,
-                        )))),
-                    )
-                    .await
-            })
-            .unwrap();
+            let result = fork
+                .fork
+                .get_storage_at(
+                    *key_.account().address(),
+                    h256_to_u256(*key_.key()),
+                    Some(BlockIdVariant::BlockNumber(BlockNumber::Number(U64::from(
+                        l2_miniblock,
+                    )))),
+                )
+                .unwrap();
 
             mutator.value_read_cache.insert(*key, result);
             result
@@ -126,6 +124,7 @@ impl ForkStorage {
     }
 
     pub fn load_factory_dep_internal(&self, hash: H256) -> Option<Vec<u8>> {
+        println!("Loading factory dep for {:?}", hash);
         let mut mutator = self.inner.write().unwrap();
         let local_storage = mutator.raw_storage.load_factory_dep(hash);
         if let Some(fork) = &mutator.fork {
@@ -136,8 +135,8 @@ impl ForkStorage {
                 return value.clone();
             }
 
-            let client = fork.create_client();
-            let result = block_on(async move { client.get_bytecode_by_hash(hash).await }).unwrap();
+            let result = fork.fork.get_bytecode_by_hash(hash);
+
             mutator.factory_dep_cache.insert(hash, result.clone());
             result
         } else {
@@ -146,7 +145,7 @@ impl ForkStorage {
     }
 }
 
-impl ReadStorage for ForkStorage {
+impl<'a, T: RemoteForkProvider + std::fmt::Debug> ReadStorage for ForkStorage<'a, T> {
     fn is_write_initial(&mut self, key: &StorageKey) -> bool {
         let mut mutator = self.inner.write().unwrap();
         mutator.raw_storage.is_write_initial(key)
@@ -161,7 +160,7 @@ impl ReadStorage for ForkStorage {
     }
 }
 
-impl ReadStorage for &ForkStorage {
+impl<'a, T: RemoteForkProvider + std::fmt::Debug> ReadStorage for &ForkStorage<'a, T> {
     fn read_value(&mut self, key: &StorageKey) -> zksync_types::StorageValue {
         self.read_value_internal(key)
     }
@@ -176,7 +175,7 @@ impl ReadStorage for &ForkStorage {
     }
 }
 
-impl ForkStorage {
+impl<'a, T> ForkStorage<'a, T> {
     pub fn set_value(&mut self, key: StorageKey, value: zksync_types::StorageValue) {
         let mut mutator = self.inner.write().unwrap();
         mutator.raw_storage.set_value(key, value)
@@ -187,11 +186,84 @@ impl ForkStorage {
     }
 }
 
-/// Holds the information about the original chain.
+pub trait RemoteForkProvider: Send + Sync + Debug {
+    fn get_storage_at(
+        &self,
+        address: H160,
+        idx: U256,
+        block: Option<BlockIdVariant>,
+    ) -> Option<H256>;
+
+    fn get_raw_block_transactions(
+        &self,
+        block_number: MiniblockNumber,
+    ) -> Option<Vec<zksync_types::Transaction>>;
+
+    fn get_bytecode_by_hash(&self, hash: H256) -> Option<Vec<u8>>;
+
+    fn get_transaction_by_hash(&self, hash: H256) -> Option<Transaction>;
+}
+
 #[derive(Debug, Clone)]
-pub struct ForkDetails {
-    // URL to the server.
+pub struct HttpForkProvider {
     pub fork_url: String,
+}
+
+impl HttpForkProvider {
+    pub fn create_client(&self) -> HttpClient {
+        HttpClientBuilder::default()
+            .build(self.fork_url.clone())
+            .expect("Unable to create a client for fork")
+    }
+}
+
+impl RemoteForkProvider for HttpForkProvider {
+    fn get_storage_at(
+        &self,
+        address: H160,
+        idx: U256,
+        block: Option<BlockIdVariant>,
+    ) -> Option<H256> {
+        let client = self.create_client();
+        let result =
+            block_on(async move { client.get_storage_at(address, idx, block).await }).unwrap();
+        Some(result)
+    }
+
+    fn get_raw_block_transactions(
+        &self,
+        block_number: MiniblockNumber,
+    ) -> Option<Vec<zksync_types::Transaction>> {
+        let client = self.create_client();
+
+        let block_transactions: Vec<zksync_types::Transaction> =
+            block_on(async move { client.get_raw_block_transactions(block_number).await }).unwrap();
+
+        Some(block_transactions)
+    }
+
+    fn get_bytecode_by_hash(&self, hash: H256) -> Option<Vec<u8>> {
+        let client = self.create_client();
+
+        let bytecode = block_on(async move { client.get_bytecode_by_hash(hash).await }).unwrap();
+
+        bytecode
+    }
+    fn get_transaction_by_hash(&self, hash: H256) -> Option<Transaction> {
+        let client = self.create_client();
+
+        let tx = block_on(async move { client.get_transaction_by_hash(hash).await }).unwrap();
+
+        tx
+    }
+}
+
+/// Holds the information about the original chain.
+#[derive(Debug)]
+pub struct ForkDetails<'a, PROVIDER> {
+    // URL to the server.
+    //pub fork_url: String,
+    pub fork: &'a PROVIDER,
     // Block number at which we forked (the next block to create is l1_block + 1)
     pub l1_block: L1BatchNumber,
     pub l2_miniblock: u64,
@@ -200,60 +272,63 @@ pub struct ForkDetails {
     pub l1_gas_price: u64,
 }
 
-impl ForkDetails {
-    pub async fn from_url_and_miniblock_and_chain(
-        url: &str,
-        client: HttpClient,
-        miniblock: u64,
-        chain_id: Option<L2ChainId>,
-    ) -> Self {
-        let block_details = client
-            .get_block_details(MiniblockNumber(miniblock as u32))
-            .await
-            .unwrap()
-            .unwrap_or_else(|| panic!("Could not find block {:?} in {:?}", miniblock, url));
+impl<'a, PROVIDER: RemoteForkProvider> ForkDetails<'a, PROVIDER> {
+    /*
+        pub async fn from_url_and_miniblock_and_chain(
+            url: &str,
+            client: HttpClient,
+            miniblock: u64,
+            chain_id: Option<L2ChainId>,
+        ) -> ForkDetails<'a, HttpForkProvider> {
+            let block_details = client
+                .get_block_details(MiniblockNumber(miniblock as u32))
+                .await
+                .unwrap()
+                .unwrap_or_else(|| panic!("Could not find block {:?} in {:?}", miniblock, url));
 
-        let l1_batch_number = block_details.l1_batch_number;
+            let l1_batch_number = block_details.l1_batch_number;
 
-        println!(
-            "Creating fork from {:?} L1 block: {:?} L2 block: {:?} with timestamp {:?} and L1 gas price {:?}",
-            url, l1_batch_number, miniblock, block_details.timestamp, block_details.l1_gas_price,
-        );
+            println!(
+                "Creating fork from {:?} L1 block: {:?} L2 block: {:?} with timestamp {:?} and L1 gas price {:?}",
+                url, l1_batch_number, miniblock, block_details.timestamp, block_details.l1_gas_price,
+            );
 
-        ForkDetails {
-            fork_url: url.to_owned(),
-            l1_block: l1_batch_number,
-            block_timestamp: block_details.timestamp,
-            l2_miniblock: miniblock,
-            overwrite_chain_id: chain_id,
-            l1_gas_price: block_details.l1_gas_price,
+            ForkDetails {
+                fork: &HttpForkProvider {
+                    fork_url: url.to_owned(),
+                },
+                l1_block: l1_batch_number,
+                block_timestamp: block_details.timestamp,
+                l2_miniblock: miniblock,
+                overwrite_chain_id: chain_id,
+                l1_gas_price: block_details.l1_gas_price,
+            }
         }
-    }
 
-    /// Create a fork from a given network at a given height.
-    pub async fn from_network(fork: &str, fork_at: Option<u64>) -> Self {
-        let (url, client) = Self::fork_to_url_and_client(fork);
-        let l2_miniblock = if let Some(fork_at) = fork_at {
-            fork_at
-        } else {
-            client.get_block_number().await.unwrap().as_u64()
-        };
-        Self::from_url_and_miniblock_and_chain(url, client, l2_miniblock, None).await
-    }
+        /// Create a fork from a given network at a given height.
+        pub async fn from_network(fork: &str, fork_at: Option<u64>) -> Self {
+            let (url, client) = Self::fork_to_url_and_client(fork);
+            let l2_miniblock = if let Some(fork_at) = fork_at {
+                fork_at
+            } else {
+                client.get_block_number().await.unwrap().as_u64()
+            };
+            Self::from_url_and_miniblock_and_chain(url, client, l2_miniblock, None).await
+        }
 
-    /// Create a fork from a given network, at a height BEFORE a transaction.
-    /// This will allow us to apply this transaction locally on top of this fork.
-    pub async fn from_network_tx(fork: &str, tx: H256) -> Self {
-        let (url, client) = Self::fork_to_url_and_client(fork);
-        let tx_details = client.get_transaction_by_hash(tx).await.unwrap().unwrap();
-        let overwrite_chain_id = Some(L2ChainId(tx_details.chain_id.as_u32() as u16));
-        let miniblock_number = MiniblockNumber(tx_details.block_number.unwrap().as_u32());
-        // We have to sync to the one-miniblock before the one where transaction is.
-        let l2_miniblock = miniblock_number.saturating_sub(1) as u64;
+        /// Create a fork from a given network, at a height BEFORE a transaction.
+        /// This will allow us to apply this transaction locally on top of this fork.
+        pub async fn from_network_tx(fork: &str, tx: H256) -> Self {
+            let (url, client) = Self::fork_to_url_and_client(fork);
+            let tx_details = client.get_transaction_by_hash(tx).await.unwrap().unwrap();
+            let overwrite_chain_id = Some(L2ChainId(tx_details.chain_id.as_u32() as u16));
+            let miniblock_number = MiniblockNumber(tx_details.block_number.unwrap().as_u32());
+            // We have to sync to the one-miniblock before the one where transaction is.
+            let l2_miniblock = miniblock_number.saturating_sub(1) as u64;
 
-        Self::from_url_and_miniblock_and_chain(url, client, l2_miniblock, overwrite_chain_id).await
-    }
-
+            Self::from_url_and_miniblock_and_chain(url, client, l2_miniblock, overwrite_chain_id).await
+        }
+    */
     /// Return URL and HTTP client for a given fork name.
     pub fn fork_to_url_and_client(fork: &str) -> (&str, HttpClient) {
         let url = match fork {
@@ -271,18 +346,13 @@ impl ForkDetails {
 
     /// Returns transactions that are in the same L2 miniblock as replay_tx, but were executed before it.
     pub async fn get_earlier_transactions_in_same_block(&self, replay_tx: H256) -> Vec<L2Tx> {
-        let client = self.create_client();
+        let tx_details = self.fork.get_transaction_by_hash(replay_tx).unwrap();
 
-        let tx_details = client
-            .get_transaction_by_hash(replay_tx)
-            .await
-            .unwrap()
-            .unwrap();
         let miniblock = MiniblockNumber(tx_details.block_number.unwrap().as_u32());
 
         // And we're fetching all the transactions from this miniblock.
         let block_transactions: Vec<zksync_types::Transaction> =
-            client.get_raw_block_transactions(miniblock).await.unwrap();
+            self.fork.get_raw_block_transactions(miniblock).unwrap();
         let mut tx_to_apply = Vec::new();
 
         for tx in block_transactions {
@@ -298,11 +368,5 @@ impl ForkDetails {
             "Cound not find tx {:?} in miniblock: {:?}",
             replay_tx, miniblock
         );
-    }
-
-    pub fn create_client(&self) -> HttpClient {
-        HttpClientBuilder::default()
-            .build(self.fork_url.clone())
-            .expect("Unable to create a client for fork")
     }
 }

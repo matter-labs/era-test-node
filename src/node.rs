@@ -2,7 +2,7 @@
 use crate::{
     console_log::ConsoleLogHandler,
     deps::system_contracts::bytecode_from_slice,
-    fork::{ForkDetails, ForkStorage},
+    fork::{ForkDetails, ForkStorage, RemoteForkProvider},
     formatter,
     utils::IntoBoxedFuture,
     ShowCalls,
@@ -79,7 +79,7 @@ pub struct TxExecutionInfo {
 }
 
 /// Helper struct for InMemoryNode.
-pub struct InMemoryNodeInner {
+pub struct InMemoryNodeInner<'a, T> {
     /// Timestamp, batch number and miniblock number that will be used by the next block.
     pub current_timestamp: u64,
     pub current_batch: u32,
@@ -90,7 +90,7 @@ pub struct InMemoryNodeInner {
     // Map from batch number to information about the block.
     pub blocks: HashMap<u32, BlockInfo>,
     // Underlying storage
-    pub fork_storage: ForkStorage,
+    pub fork_storage: ForkStorage<'a, T>,
     // Debug level information.
     pub show_calls: ShowCalls,
     // If true - will contact openchain to resolve the ABI to function names.
@@ -108,7 +108,7 @@ type L2TxResult = (
     HashMap<U256, Vec<U256>>,
 );
 
-impl InMemoryNodeInner {
+impl<'a, T> InMemoryNodeInner<'a, T> {
     fn create_block_context(&self) -> BlockContext {
         BlockContext {
             block_number: self.current_batch,
@@ -141,8 +141,8 @@ fn not_implemented<T: Send + 'static>(
 /// In-memory node, that can be used for local & unit testing.
 /// It also supports the option of forking testnet/mainnet.
 /// All contents are removed when object is destroyed.
-pub struct InMemoryNode {
-    inner: Arc<RwLock<InMemoryNodeInner>>,
+pub struct InMemoryNode<'a, T> {
+    inner: Arc<RwLock<InMemoryNodeInner<'a, T>>>,
 }
 
 fn bsc_load_with_bootloader(
@@ -196,7 +196,7 @@ pub fn baseline_contracts(use_local_contracts: bool) -> BaseSystemContracts {
     bsc_load_with_bootloader(bootloader_bytecode, use_local_contracts)
 }
 
-fn contract_address_from_tx_result(execution_result: &VmTxExecutionResult) -> Option<H160> {
+pub fn contract_address_from_tx_result(execution_result: &VmTxExecutionResult) -> Option<H160> {
     for query in execution_result.result.logs.storage_logs.iter().rev() {
         if query.log_type == StorageLogQueryType::InitialWrite
             && query.log_query.address == ACCOUNT_CODE_STORAGE_ADDRESS
@@ -207,9 +207,9 @@ fn contract_address_from_tx_result(execution_result: &VmTxExecutionResult) -> Op
     None
 }
 
-impl InMemoryNode {
+impl<'a, T: RemoteForkProvider> InMemoryNode<'a, T> {
     pub fn new(
-        fork: Option<ForkDetails>,
+        fork: Option<ForkDetails<'a, T>>,
         show_calls: ShowCalls,
         resolve_hashes: bool,
         dev_use_local_contracts: bool,
@@ -239,7 +239,7 @@ impl InMemoryNode {
         }
     }
 
-    pub fn get_inner(&self) -> Arc<RwLock<InMemoryNodeInner>> {
+    pub fn get_inner(&self) -> Arc<RwLock<InMemoryNodeInner<'a, T>>> {
         self.inner.clone()
     }
 
@@ -295,7 +295,7 @@ impl InMemoryNode {
         let bootloader_code = &inner.playground_contracts;
 
         let block_context = inner.create_block_context();
-        let block_properties = InMemoryNodeInner::create_block_properties(bootloader_code);
+        let block_properties = InMemoryNodeInner::<'a, T>::create_block_properties(bootloader_code);
 
         // init vm
         let mut vm = init_vm_inner(
@@ -345,7 +345,11 @@ impl InMemoryNode {
         }
     }
 
-    fn run_l2_tx_inner(
+    pub fn run_l2_tx_for_revm(&self, l2_tx: L2Tx) -> Result<L2TxResult, String> {
+        self.run_l2_tx_inner(l2_tx, TxExecutionMode::VerifyExecute)
+    }
+
+    pub fn run_l2_tx_inner(
         &self,
         l2_tx: L2Tx,
         execution_mode: TxExecutionMode,
@@ -366,7 +370,7 @@ impl InMemoryNode {
         };
 
         let block_context = inner.create_block_context();
-        let block_properties = InMemoryNodeInner::create_block_properties(bootloader_code);
+        let block_properties = InMemoryNodeInner::<'a, T>::create_block_properties(bootloader_code);
 
         let block = BlockInfo {
             batch_number: block_context.block_number,
@@ -495,8 +499,8 @@ impl InMemoryNode {
         Ok(())
     }
 }
-
-impl EthNamespaceT for InMemoryNode {
+/*
+impl<'a, T> EthNamespaceT for InMemoryNode<'a, T> {
     /// Returns the chain ID of the node.
     fn chain_id(&self) -> jsonrpc_core::BoxFuture<jsonrpc_core::Result<zksync_basic_types::U64>> {
         match self.inner.read() {
@@ -1120,3 +1124,4 @@ impl EthNamespaceT for InMemoryNode {
         not_implemented("send_transaction")
     }
 }
+*/
