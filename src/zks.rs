@@ -236,6 +236,7 @@ mod tests {
     use std::str::FromStr;
 
     use crate::node::InMemoryNode;
+    use crate::node::ShowCalls;
 
     use super::*;
     use zksync_basic_types::Address;
@@ -298,9 +299,9 @@ mod tests {
         // Arrange
         let node = InMemoryNode::new(
             None,
-            crate::ShowCalls::None,
-            crate::ShowStorageLogs::None,
-            crate::ShowVMDetails::None,
+            ShowCalls::None,
+            crate::node::ShowStorageLogs::None,
+            crate::node::ShowVMDetails::None,
             false,
             false,
         );
