@@ -14,7 +14,6 @@ use jsonrpc_core::BoxFuture;
 use std::{
     cmp::{self},
     collections::HashMap,
-    convert::TryInto,
     str::FromStr,
     sync::{Arc, RwLock},
 };
@@ -42,7 +41,7 @@ use zksync_types::{
     fee::Fee,
     get_code_key, get_nonce_key,
     l2::L2Tx,
-    transaction_request::{l2_tx_from_call_req, TransactionRequest},
+    transaction_request::TransactionRequest,
     tx::tx_execution_info::TxExecutionStatus,
     utils::{
         decompose_full_nonce, nonces_to_full_nonce, storage_key_for_eth_balance,
@@ -61,7 +60,7 @@ use zksync_utils::{
 };
 use zksync_web3_decl::{
     error::Web3Error,
-    types::{Filter, FilterChanges},
+    types::{FeeHistory, Filter, FilterChanges},
 };
 
 /// Max possible size of an ABI encoded tx (in bytes).
@@ -121,8 +120,7 @@ impl FromStr for ShowCalls {
             _ => Err(format!(
                 "Unknown ShowCalls value {} - expected one of none|user|system|all.",
                 s
-            )
-            .to_owned()),
+            )),
         }
     }
 }
@@ -258,7 +256,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
         &self,
         req: zksync_types::transaction_request::CallRequest,
     ) -> jsonrpc_core::Result<Fee> {
-        let mut l2_tx = match l2_tx_from_call_req(req, MAX_TX_SIZE) {
+        let mut l2_tx = match L2Tx::from_request(req.into(), MAX_TX_SIZE) {
             Ok(tx) => tx,
             Err(e) => {
                 let error = Web3Error::SerializationError(e);
@@ -383,23 +381,20 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
 
         match estimate_gas_result {
             Err(tx_revert_reason) => {
-                println!("{}", format!("Unable to estimate gas for the request with our suggested gas limit of {}. The transaction is most likely unexecutable. Breakdown of estimation:", suggested_gas_limit + overhead).to_string().red());
+                println!("{}", format!("Unable to estimate gas for the request with our suggested gas limit of {}. The transaction is most likely unexecutable. Breakdown of estimation:", suggested_gas_limit + overhead).red());
                 println!(
                     "{}",
                     format!(
                         "\tEstimated transaction body gas cost: {}",
                         tx_body_gas_limit
                     )
-                    .to_string()
                     .red()
                 );
                 println!(
                     "{}",
-                    format!("\tGas for pubdata: {}", gas_for_bytecodes_pubdata)
-                        .to_string()
-                        .red()
+                    format!("\tGas for pubdata: {}", gas_for_bytecodes_pubdata).red()
                 );
-                println!("{}", format!("\tOverhead: {}", overhead).to_string().red());
+                println!("{}", format!("\tOverhead: {}", overhead).red());
                 let message = tx_revert_reason.to_string();
                 let data = match tx_revert_reason {
                     TxRevertReason::EthCall(vm_revert_reason) => vm_revert_reason.encoded_data(),
@@ -428,16 +423,13 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
                                 "\tEstimated transaction body gas cost: {}",
                                 tx_body_gas_limit
                             )
-                            .to_string()
                             .red()
                         );
                         println!(
                             "{}",
-                            format!("\tGas for pubdata: {}", gas_for_bytecodes_pubdata)
-                                .to_string()
-                                .red()
+                            format!("\tGas for pubdata: {}", gas_for_bytecodes_pubdata).red()
                         );
-                        println!("{}", format!("\tOverhead: {}", overhead).to_string().red());
+                        println!("{}", format!("\tOverhead: {}", overhead).red());
                         return Err(into_jsrpc_error(Web3Error::SubmitTransactionError(
                             "exceeds block gas limit".into(),
                             Default::default(),
@@ -991,7 +983,7 @@ impl<S: Send + Sync + 'static + ForkSource + std::fmt::Debug> EthNamespaceT for 
         req: zksync_types::transaction_request::CallRequest,
         _block: Option<zksync_types::api::BlockIdVariant>,
     ) -> jsonrpc_core::BoxFuture<jsonrpc_core::Result<zksync_basic_types::Bytes>> {
-        match l2_tx_from_call_req(req, MAX_TX_SIZE) {
+        match L2Tx::from_request(req.into(), MAX_TX_SIZE) {
             Ok(mut tx) => {
                 tx.common_data.fee.gas_limit = ETH_CALL_GAS_LIMIT.into();
                 let result = self.run_l2_call(tx);
@@ -1032,8 +1024,9 @@ impl<S: Send + Sync + 'static + ForkSource + std::fmt::Debug> EthNamespaceT for 
                         .into_boxed_future(),
                     },
                     Err(e) => {
-                        let error =
-                            Web3Error::InvalidTransactionData(ethabi::Error::InvalidName(e));
+                        let error = Web3Error::InvalidTransactionData(
+                            zksync_types::ethabi::Error::InvalidName(e),
+                        );
                         Err(into_jsrpc_error(error)).into_boxed_future()
                     }
                 }
@@ -1299,16 +1292,15 @@ impl<S: Send + Sync + 'static + ForkSource + std::fmt::Debug> EthNamespaceT for 
             }
         };
 
-        let (tx_req, hash) =
-            match TransactionRequest::from_bytes(&tx_bytes.0, chain_id.0, MAX_TX_SIZE) {
-                Ok(result) => result,
-                Err(e) => {
-                    return futures::future::err(into_jsrpc_error(Web3Error::SerializationError(e)))
-                        .boxed()
-                }
-            };
+        let (tx_req, hash) = match TransactionRequest::from_bytes(&tx_bytes.0, chain_id.0) {
+            Ok(result) => result,
+            Err(e) => {
+                return futures::future::err(into_jsrpc_error(Web3Error::SerializationError(e)))
+                    .boxed()
+            }
+        };
 
-        let mut l2_tx: L2Tx = match tx_req.try_into() {
+        let mut l2_tx: L2Tx = match L2Tx::from_request(tx_req, MAX_TX_SIZE) {
             Ok(tx) => tx,
             Err(e) => {
                 return futures::future::err(into_jsrpc_error(Web3Error::SerializationError(e)))
@@ -1440,6 +1432,7 @@ impl<S: Send + Sync + 'static + ForkSource + std::fmt::Debug> EthNamespaceT for 
                             zksync_types::l2::TransactionType::EIP1559Transaction => 2,
                             zksync_types::l2::TransactionType::EIP712Transaction => 113,
                             zksync_types::l2::TransactionType::PriorityOpTransaction => 255,
+                            zksync_types::l2::TransactionType::ProtocolUpgradeTransaction => 254,
                         };
                         Some(tx_type.into())
                     },
@@ -1635,10 +1628,12 @@ impl<S: Send + Sync + 'static + ForkSource + std::fmt::Debug> EthNamespaceT for 
         not_implemented("mining")
     }
 
-    fn send_transaction(
+    fn fee_history(
         &self,
-        _transaction_request: zksync_types::web3::types::TransactionRequest,
-    ) -> jsonrpc_core::BoxFuture<jsonrpc_core::Result<zksync_basic_types::H256>> {
-        not_implemented("send_transaction")
+        _block_count: U64,
+        _newest_block: zksync_types::api::BlockNumber,
+        _reward_percentiles: Vec<f32>,
+    ) -> jsonrpc_core::BoxFuture<jsonrpc_core::Result<FeeHistory>> {
+        not_implemented("fee history")
     }
 }
