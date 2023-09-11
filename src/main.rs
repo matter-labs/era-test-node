@@ -45,6 +45,7 @@ use crate::hardhat::{HardhatNamespaceImpl, HardhatNamespaceT};
 use crate::node::{ShowGasDetails, ShowStorageLogs, ShowVMDetails};
 use clap::{Parser, Subcommand};
 use configuration_api::ConfigurationApiNamespaceT;
+use evm::{EvmNamespaceImpl, EvmNamespaceT};
 use fork::{ForkDetails, ForkSource};
 use node::ShowCalls;
 use zks::ZkMockNamespaceImpl;
@@ -53,6 +54,7 @@ mod bootloader_debug;
 mod configuration_api;
 mod console_log;
 mod deps;
+mod evm;
 mod fork;
 mod formatter;
 mod hardhat;
@@ -139,6 +141,7 @@ async fn build_json_http<
     node: InMemoryNode<S>,
     net: NetNamespace,
     config_api: ConfigurationApiNamespace<S>,
+    evm: EvmNamespaceImpl<S>,
     zks: ZkMockNamespaceImpl<S>,
     hardhat: HardhatNamespaceImpl<S>,
 ) -> tokio::task::JoinHandle<()> {
@@ -149,6 +152,7 @@ async fn build_json_http<
         io.extend_with(node.to_delegate());
         io.extend_with(net.to_delegate());
         io.extend_with(config_api.to_delegate());
+        io.extend_with(evm.to_delegate());
         io.extend_with(zks.to_delegate());
         io.extend_with(hardhat.to_delegate());
         io
@@ -316,6 +320,7 @@ async fn main() -> anyhow::Result<()> {
 
     let net = NetNamespace::new(L2ChainId(TEST_NODE_NETWORK_ID));
     let config_api = ConfigurationApiNamespace::new(node.get_inner());
+    let evm = EvmNamespaceImpl::new(node.get_inner());
     let zks = ZkMockNamespaceImpl::new(node.get_inner());
     let hardhat = HardhatNamespaceImpl::new(node.get_inner());
 
@@ -324,6 +329,7 @@ async fn main() -> anyhow::Result<()> {
         node,
         net,
         config_api,
+        evm,
         zks,
         hardhat,
     )
