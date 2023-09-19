@@ -68,6 +68,8 @@ use zksync_web3_decl::{
     types::{FeeHistory, Filter, FilterChanges},
 };
 
+use wasm_bindgen::prelude::*;
+
 /// Max possible size of an ABI encoded tx (in bytes).
 pub const MAX_TX_SIZE: usize = 1_000_000;
 /// Timestamp of the first block (if not running in fork mode).
@@ -571,6 +573,11 @@ fn not_implemented<T: Send + 'static>(
     .into_boxed_future()
 }
 
+#[wasm_bindgen]
+struct InMemoryNodeWrapper
+{
+    i: InMemoryNode<ForkSource>
+}
 /// In-memory node, that can be used for local & unit testing.
 /// It also supports the option of forking testnet/mainnet.
 /// All contents are removed when object is destroyed.
