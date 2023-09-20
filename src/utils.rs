@@ -10,11 +10,13 @@ use vm::{
     },
     HistoryEnabled, OracleTools,
 };
-use zksync_basic_types::{H256, U256};
+use zksync_basic_types::{H256, U256, U64};
 use zksync_state::StorageView;
 use zksync_state::WriteStorage;
 use zksync_types::{
-    api::Block, zk_evm::zkevm_opcode_defs::system_params::MAX_TX_ERGS_LIMIT, MAX_TXS_IN_BLOCK,
+    api::{Block, BlockNumber},
+    zk_evm::zkevm_opcode_defs::system_params::MAX_TX_ERGS_LIMIT,
+    MAX_TXS_IN_BLOCK,
 };
 use zksync_utils::{ceil_div_u256, u256_to_h256};
 
@@ -245,11 +247,32 @@ pub fn mine_empty_blocks<S: std::fmt::Debug + ForkSource>(
     node.current_batch = node.current_batch.saturating_add(1);
 }
 
+/// Returns the actual [U64] block number from [BlockNumber].
+///
+/// # Arguments
+///
+/// * `block_number` - [BlockNumber] for a block.
+/// * `latest_block_number` - A [U64] representing the latest block number.
+///
+/// # Returns
+///
+/// A [U64] representing the input block number.
+pub fn to_real_block_number(block_number: BlockNumber, latest_block_number: U64) -> U64 {
+    match block_number {
+        BlockNumber::Finalized
+        | BlockNumber::Pending
+        | BlockNumber::Committed
+        | BlockNumber::Latest => latest_block_number,
+        BlockNumber::Earliest => U64::zero(),
+        BlockNumber::Number(n) => n,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use zksync_basic_types::U256;
 
-    use crate::utils::to_human_size;
+    use super::*;
 
     #[test]
     fn test_human_sizes() {
@@ -259,5 +282,41 @@ mod tests {
         assert_eq!("0", to_human_size(U256::from(0)));
         assert_eq!("1", to_human_size(U256::from(1)));
         assert_eq!("250_000_000", to_human_size(U256::from(250000000u64)));
+    }
+
+    #[test]
+    fn test_to_real_block_number_finalized() {
+        let actual = to_real_block_number(BlockNumber::Finalized, U64::from(10));
+        assert_eq!(U64::from(10), actual);
+    }
+
+    #[test]
+    fn test_to_real_block_number_pending() {
+        let actual = to_real_block_number(BlockNumber::Pending, U64::from(10));
+        assert_eq!(U64::from(10), actual);
+    }
+
+    #[test]
+    fn test_to_real_block_number_committed() {
+        let actual = to_real_block_number(BlockNumber::Committed, U64::from(10));
+        assert_eq!(U64::from(10), actual);
+    }
+
+    #[test]
+    fn test_to_real_block_number_latest() {
+        let actual = to_real_block_number(BlockNumber::Latest, U64::from(10));
+        assert_eq!(U64::from(10), actual);
+    }
+
+    #[test]
+    fn test_to_real_block_number_earliest() {
+        let actual = to_real_block_number(BlockNumber::Earliest, U64::from(10));
+        assert_eq!(U64::zero(), actual);
+    }
+
+    #[test]
+    fn test_to_real_block_number_number() {
+        let actual = to_real_block_number(BlockNumber::Number(U64::from(5)), U64::from(10));
+        assert_eq!(U64::from(5), actual);
     }
 }
