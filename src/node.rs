@@ -5,7 +5,7 @@ use crate::{
     filters::EthFilters,
     fork::{ForkDetails, ForkSource, ForkStorage},
     formatter,
-    system_contracts::{self, SystemContracts},
+    system_contracts::{self, Options, SystemContracts},
     utils::{
         self, adjust_l1_gas_price_for_tx, derive_gas_estimation_overhead, to_human_size,
         IntoBoxedFuture,
@@ -36,7 +36,7 @@ use vm::{
 };
 use zksync_basic_types::{
     web3::{self, signing::keccak256},
-    AccountTreeId, Bytes, H160, H256, U256, U64,
+    AccountTreeId, Address, Bytes, H160, H256, U256, U64,
 };
 use zksync_contracts::BaseSystemContracts;
 use zksync_core::api_server::web3::backend_jsonrpc::{
@@ -255,6 +255,7 @@ pub struct InMemoryNodeInner<S> {
     pub resolve_hashes: bool,
     pub console_log_handler: ConsoleLogHandler,
     pub system_contracts: SystemContracts,
+    pub impersonated_accounts: HashSet<Address>,
 }
 
 type L2TxResult = (
@@ -566,6 +567,17 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
             Some(revert) => Err(revert.revert_reason),
         }
     }
+
+    /// Sets the `impersonated_account` field of the node.
+    /// This field is used to override the `tx.initiator_account` field of the transaction in the `run_l2_tx` method.
+    pub fn set_impersonated_account(&mut self, address: Address) -> bool {
+        self.impersonated_accounts.insert(address)
+    }
+
+    /// Clears the `impersonated_account` field of the node.
+    pub fn stop_impersonating_account(&mut self, address: Address) -> bool {
+        self.impersonated_accounts.remove(&address)
+    }
 }
 
 fn not_implemented<T: Send + 'static>(
@@ -645,6 +657,7 @@ impl<S: ForkSource + std::fmt::Debug> InMemoryNode<S> {
                 resolve_hashes,
                 console_log_handler: ConsoleLogHandler::default(),
                 system_contracts: SystemContracts::from_options(system_contracts_options),
+                impersonated_accounts: Default::default(),
             }
         } else {
             let mut block_hashes = HashMap::<u64, H256>::new();
@@ -675,6 +688,7 @@ impl<S: ForkSource + std::fmt::Debug> InMemoryNode<S> {
                 resolve_hashes,
                 console_log_handler: ConsoleLogHandler::default(),
                 system_contracts: SystemContracts::from_options(system_contracts_options),
+                impersonated_accounts: Default::default(),
             }
         };
 
@@ -946,7 +960,24 @@ impl<S: ForkSource + std::fmt::Debug> InMemoryNode<S> {
 
         let mut oracle_tools = OracleTools::new(&mut storage_view, HistoryEnabled);
 
-        let bootloader_code = inner.system_contracts.contracts(execution_mode);
+        // if we are impersonating an account, we need to use non-verifying system contracts
+        let nonverifying_contracts;
+        let bootloader_code = {
+            if inner
+                .impersonated_accounts
+                .contains(&l2_tx.common_data.initiator_address)
+            {
+                tracing::info!(
+                    "🕵️ Executing tx from impersonated account {:?}",
+                    l2_tx.common_data.initiator_address
+                );
+                nonverifying_contracts =
+                    SystemContracts::from_options(&Options::BuiltInWithoutSecurity);
+                nonverifying_contracts.contracts(execution_mode)
+            } else {
+                inner.system_contracts.contracts(execution_mode)
+            }
+        };
 
         let block_context = inner.create_block_context();
         let block_properties = InMemoryNodeInner::<S>::create_block_properties(bootloader_code);
@@ -963,6 +994,7 @@ impl<S: ForkSource + std::fmt::Debug> InMemoryNode<S> {
         let spent_on_pubdata_before = vm.state.local_state.spent_pubdata_counter;
 
         let tx: Transaction = l2_tx.clone().into();
+
         push_transaction_to_bootloader_memory(&mut vm, &tx, execution_mode, None);
         let tx_result = vm
             .execute_next_tx(u32::MAX, true)

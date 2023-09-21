@@ -71,6 +71,34 @@ pub trait HardhatNamespaceT {
         num_blocks: Option<U64>,
         interval: Option<U64>,
     ) -> BoxFuture<Result<bool>>;
+
+    /// Hardhat Network allows you to send transactions impersonating specific account and contract addresses.
+    /// To impersonate an account use this method, passing the address to impersonate as its parameter.
+    /// After calling this method, any transactions with this sender will be executed without verification.
+    /// Multiple addresses can be impersonated at once.
+    ///
+    /// # Arguments
+    ///
+    /// * `address` - The address to impersonate
+    ///
+    /// # Returns
+    ///
+    /// A `BoxFuture` containing a `Result` with a `bool` representing the success of the operation.
+    #[rpc(name = "hardhat_impersonateAccount")]
+    fn impersonate_account(&self, address: Address) -> BoxFuture<Result<bool>>;
+
+    /// Use this method to stop impersonating an account after having previously used `hardhat_impersonateAccount`
+    /// The method returns `true` if the account was being impersonated and `false` otherwise.
+    ///
+    /// # Arguments
+    ///
+    /// * `address` - The address to stop impersonating.
+    ///
+    /// # Returns
+    ///
+    /// A `BoxFuture` containing a `Result` with a `bool` representing the success of the operation.
+    #[rpc(name = "hardhat_stopImpersonatingAccount")]
+    fn stop_impersonating_account(&self, address: Address) -> BoxFuture<Result<bool>>;
 }
 
 impl<S: Send + Sync + 'static + ForkSource + std::fmt::Debug> HardhatNamespaceT
@@ -174,6 +202,45 @@ impl<S: Send + Sync + 'static + ForkSource + std::fmt::Debug> HardhatNamespaceT
             }
         })
     }
+
+    fn impersonate_account(&self, address: Address) -> BoxFuture<jsonrpc_core::Result<bool>> {
+        let inner = Arc::clone(&self.node);
+        Box::pin(async move {
+            match inner.write() {
+                Ok(mut inner) => {
+                    if inner.set_impersonated_account(address) {
+                        log::info!("🕵️ Account {:?} has been impersonated", address);
+                        Ok(true)
+                    } else {
+                        log::info!("🕵️ Account {:?} was already impersonated", address);
+                        Ok(false)
+                    }
+                }
+                Err(_) => Err(into_jsrpc_error(Web3Error::InternalError)),
+            }
+        })
+    }
+
+    fn stop_impersonating_account(&self, address: Address) -> BoxFuture<Result<bool>> {
+        let inner = Arc::clone(&self.node);
+        Box::pin(async move {
+            match inner.write() {
+                Ok(mut inner) => {
+                    if inner.stop_impersonating_account(address) {
+                        log::info!("🕵️ Stopped impersonating account {:?}", address);
+                        Ok(true)
+                    } else {
+                        log::info!(
+                            "🕵️ Account {:?} was not impersonated, nothing to stop",
+                            address
+                        );
+                        Ok(false)
+                    }
+                }
+                Err(_) => Err(into_jsrpc_error(Web3Error::InternalError)),
+            }
+        })
+    }
 }
 
 #[cfg(test)]
@@ -181,8 +248,9 @@ mod tests {
     use super::*;
     use crate::{http_fork_source::HttpForkSource, node::InMemoryNode};
     use std::str::FromStr;
+    use zksync_basic_types::{Nonce, H256};
     use zksync_core::api_server::web3::backend_jsonrpc::namespaces::eth::EthNamespaceT;
-    use zksync_types::api::BlockNumber;
+    use zksync_types::{api::BlockNumber, fee::Fee, l2::L2Tx};
 
     #[tokio::test]
     async fn test_set_balance() {
@@ -268,7 +336,8 @@ mod tests {
     #[tokio::test]
     async fn test_hardhat_mine_custom() {
         let node = InMemoryNode::<HttpForkSource>::default();
-        let hardhat = HardhatNamespaceImpl::new(node.get_inner());
+        let hardhat: HardhatNamespaceImpl<HttpForkSource> =
+            HardhatNamespaceImpl::new(node.get_inner());
 
         let start_block = node
             .get_block_by_number(zksync_types::api::BlockNumber::Latest, false)
@@ -298,5 +367,80 @@ mod tests {
                 current_block.timestamp
             );
         }
+    }
+
+    #[tokio::test]
+    async fn test_impersonate_account() {
+        let node = InMemoryNode::<HttpForkSource>::default();
+        let hardhat: HardhatNamespaceImpl<HttpForkSource> =
+            HardhatNamespaceImpl::new(node.get_inner());
+        let to_impersonate =
+            Address::from_str("0xd8da6bf26964af9d7eed9e03e53415d37aa96045").unwrap();
+
+        // give impersonated account some balance
+        let result = hardhat
+            .set_balance(to_impersonate, U256::exp10(18))
+            .await
+            .unwrap();
+        assert!(result);
+
+        // construct a tx
+        let mut tx = L2Tx::new(
+            Address::random(),
+            vec![],
+            Nonce(0),
+            Fee {
+                gas_limit: U256::from(1_000_000),
+                max_fee_per_gas: U256::from(250_000_000),
+                max_priority_fee_per_gas: U256::from(250_000_000),
+                gas_per_pubdata_limit: U256::from(20000),
+            },
+            to_impersonate,
+            U256::one(),
+            None,
+            Default::default(),
+        );
+        tx.set_input(vec![], H256::random());
+
+        // try to execute the tx- should fail without signature
+        assert!(node.apply_txs(vec![tx.clone()]).is_err());
+
+        // impersonate the account
+        let result = hardhat
+            .impersonate_account(to_impersonate)
+            .await
+            .expect("impersonate_account");
+
+        // result should be true
+        assert!(result);
+
+        // impersonating the same account again should return false
+        let result = hardhat
+            .impersonate_account(to_impersonate)
+            .await
+            .expect("impersonate_account");
+        assert!(!result);
+
+        // execution should now succeed
+        assert!(node.apply_txs(vec![tx.clone()]).is_ok());
+
+        // stop impersonating the account
+        let result = hardhat
+            .stop_impersonating_account(to_impersonate)
+            .await
+            .expect("stop_impersonating_account");
+
+        // result should be true
+        assert!(result);
+
+        // stop impersonating the same account again should return false
+        let result = hardhat
+            .stop_impersonating_account(to_impersonate)
+            .await
+            .expect("stop_impersonating_account");
+        assert!(!result);
+
+        // execution should now fail again
+        assert!(node.apply_txs(vec![tx]).is_err());
     }
 }
