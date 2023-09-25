@@ -576,7 +576,7 @@ fn not_implemented<T: Send + 'static>(
 #[wasm_bindgen]
 struct InMemoryNodeWrapper
 {
-    i: InMemoryNode<ForkSource>
+    i: InMemoryNode<Box<dyn ForkSource>>
 }
 /// In-memory node, that can be used for local & unit testing.
 /// It also supports the option of forking testnet/mainnet.
