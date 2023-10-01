@@ -158,6 +158,11 @@ impl<S: std::fmt::Debug + ForkSource> ReadStorage for ForkStorage<S> {
     fn read_value(&mut self, key: &StorageKey) -> zksync_types::StorageValue {
         self.read_value_internal(key)
     }
+
+    fn get_enumeration_index(&mut self, _key: &StorageKey) -> Option<u64> {
+        // TODO:?
+        unimplemented!()
+    }
 }
 
 impl<S: std::fmt::Debug + ForkSource> ReadStorage for &ForkStorage<S> {
@@ -172,6 +177,11 @@ impl<S: std::fmt::Debug + ForkSource> ReadStorage for &ForkStorage<S> {
 
     fn load_factory_dep(&mut self, hash: H256) -> Option<Vec<u8>> {
         self.load_factory_dep_internal(hash)
+    }
+
+    fn get_enumeration_index(&mut self, _key: &StorageKey) -> Option<u64> {
+        // TODO:?
+        unimplemented!()
     }
 }
 

@@ -287,7 +287,12 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
         &self,
         storage: StoragePtr<ST>,
     ) -> (L1BatchEnv, BlockContext) {
-        let last_l2_block = load_last_l2_block(storage);
+        // TOOD: is this hack fine?
+        let last_l2_block = load_last_l2_block(storage).unwrap_or_else(|| vm::L2Block {
+            number: 0,
+            timestamp: 0,
+            hash: zksync_types::block::legacy_miniblock_hash(zksync_types::MiniblockNumber(0)),
+        });
         let block_ctx = BlockContext::from_current(
             self.current_batch,
             self.current_miniblock,
