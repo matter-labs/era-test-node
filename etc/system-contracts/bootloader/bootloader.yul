@@ -1174,6 +1174,7 @@ object "Bootloader" {
 
                 // Note, that we pass reservedGas from the refundGas separately as it should not be used
                 // during the postOp execution.
+                <!-- @ifndef ACCOUNT_IMPERSONATING -->
                 refund := refundCurrentL2Transaction(
                     txDataOffset,
                     transactionIndex,
@@ -1182,6 +1183,7 @@ object "Bootloader" {
                     gasPrice,
                     reservedGas
                 )
+                <!-- @endif -->
                 ///
                 /// DEBUG SUPPORT START
                 ///
