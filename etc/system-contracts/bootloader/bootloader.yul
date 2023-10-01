@@ -1122,11 +1122,16 @@ object "Bootloader" {
 
                 debugLog("gasLimitForTx", gasLimitForTx)
 
+                <!-- @ifndef ACCOUNT_IMPERSONATING -->
                 let gasLeft := l2TxValidation(
                     txDataOffset,
                     gasLimitForTx,
                     gasPrice
                 )
+                <!-- @endif -->
+                <!-- @ifdef ACCOUNT_IMPERSONATING -->
+                let gasLeft := gasLimitForTx
+                <!-- @endif -->
                 ///
                 /// DEBUG SUPPORT START
                 ///
@@ -1368,10 +1373,18 @@ object "Bootloader" {
 
                     let gasBeforeExecute := gas()
                     // for this one, we don't care whether or not it fails.
+                    <!-- @ifndef ACCOUNT_IMPERSONATING -->
                     success := ZKSYNC_NEAR_CALL_executeL2Tx(
                         executeABI,
                         txDataOffset
                     )
+                    <!-- @endif -->
+                    <!-- @ifdef ACCOUNT_IMPERSONATING -->
+                    success := ZKSYNC_NEAR_CALL_executeL2TxImpersonating(
+                        executeABI,
+                        txDataOffset
+                    )
+                    <!-- @endif -->
 
                     gasSpentOnExecute := add(gasSpentOnFactoryDeps, sub(gasBeforeExecute, gas()))
                 }
@@ -1430,6 +1443,36 @@ object "Bootloader" {
                 success := executeL2Tx(txDataOffset, from)
                 debugLog("Executing L2 ret", success)
             }
+
+            <!-- @ifdef ACCOUNT_IMPERSONATING -->
+            function ZKSYNC_NEAR_CALL_executeL2TxImpersonating(
+                abi,
+                txDataOffset
+            ) {
+                let innerTxDataOffset := add(txDataOffset, 32)
+                let to := getTo(innerTxDataOffset)
+                let from := getFrom(innerTxDataOffset)
+                let value := getValue(innerTxDataOffset)
+                let dataPtr := getDataPtr(innerTxDataOffset)
+
+                debugLog("Executing L2 tx", 0)
+                switch isEOA(from)
+                case true {
+                    setTxOrigin(from)
+                }
+                default {
+                    setTxOrigin(0)
+                }
+
+                let success := msgValueSimulatorMimicCall(
+                    to,
+                    from,
+                    value,
+                    dataPtr
+                )
+                debugLog("Executing L2 ret", success)
+            }
+            <!-- @endif -->
 
             /// @dev Sets factory dependencies for an L2 transaction with possible usage of packed bytecodes.
             function ZKSYNC_NEAR_CALL_markFactoryDepsL2(

@@ -21,7 +21,7 @@ done
 cp etc/system-contracts/contracts/artifacts/EventWriter.yul/EventWriter.yul.zbin $DST_DIR
 
 
-bootloaders=("fee_estimate"  "gas_test" "playground_batch" "proved_batch" )
+bootloaders=("fee_estimate"  "gas_test" "playground_batch" "proved_batch" "proved_batch_impersonating" "fee_estimate_impersonating" )
 
 for bootloader in "${bootloaders[@]}"; do
     cp etc/system-contracts/bootloader/build/artifacts/$bootloader.yul/$bootloader.yul.zbin $DST_DIR

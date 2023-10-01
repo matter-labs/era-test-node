@@ -5,7 +5,7 @@ use crate::{
     filters::{EthFilters, FilterType, LogFilter},
     fork::{ForkDetails, ForkSource, ForkStorage},
     formatter,
-    system_contracts::{self, Options, SystemContracts},
+    system_contracts::{self, SystemContracts},
     utils::{
         self, adjust_l1_gas_price_for_tx, bytecode_to_factory_dep, to_human_size, IntoBoxedFuture,
     },
@@ -435,7 +435,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
         let (mut batch_env, _) = self.create_l1_batch_env(storage.clone());
         batch_env.l1_gas_price = l1_gas_price;
         let system_env = self.create_system_env(
-            self.system_contracts.contracts_for_fee_estimate().clone(),
+            self.system_contracts.contracts_for_fee_estimate(false).clone(), // TODO: not always false
             execution_mode,
         );
 
@@ -1050,8 +1050,6 @@ impl<S: ForkSource + std::fmt::Debug> InMemoryNode<S> {
 
         let (batch_env, block_ctx) = inner.create_l1_batch_env(storage.clone());
 
-        // if we are impersonating an account, we need to use non-verifying system contracts
-        let nonverifying_contracts;
         let bootloader_code = {
             if inner
                 .impersonated_accounts
@@ -1061,11 +1059,9 @@ impl<S: ForkSource + std::fmt::Debug> InMemoryNode<S> {
                     "🕵️ Executing tx from impersonated account {:?}",
                     l2_tx.common_data.initiator_address
                 );
-                nonverifying_contracts =
-                    SystemContracts::from_options(&Options::BuiltInWithoutSecurity);
-                nonverifying_contracts.contracts(execution_mode)
+                inner.system_contracts.contracts(execution_mode, true)
             } else {
-                inner.system_contracts.contracts(execution_mode)
+                inner.system_contracts.contracts(execution_mode, false)
             }
         };
         let system_env = inner.create_system_env(bootloader_code.clone(), execution_mode);
