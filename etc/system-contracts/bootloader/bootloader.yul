@@ -1122,13 +1122,11 @@ object "Bootloader" {
 
                 debugLog("gasLimitForTx", gasLimitForTx)
 
-                <!-- @ifndef ACCOUNT_IMPERSONATING -->
                 let gasLeft := l2TxValidation(
                     txDataOffset,
                     gasLimitForTx,
                     gasPrice
                 )
-                <!-- @endif -->
                 <!-- @ifdef ACCOUNT_IMPERSONATING -->
                 let gasLeft := gasLimitForTx
                 <!-- @endif -->
@@ -1301,7 +1299,12 @@ object "Bootloader" {
 
                     debugLog("validateABI", validateABI)
 
-                    isValid := ZKSYNC_NEAR_CALL_validateTx(validateABI, txDataOffset, gasPrice)                    
+                    <!-- @ifndef ACCOUNT_IMPERSONATING -->
+                    isValid := ZKSYNC_NEAR_CALL_validateTx(validateABI, txDataOffset, gasPrice)
+                    <!-- @endif -->
+                    <!-- @ifdef ACCOUNT_IMPERSONATING -->
+                    isValid := 1
+                    <!-- @endif -->
                 }
 
                 debugLog("isValid", isValid)
@@ -1450,7 +1453,7 @@ object "Bootloader" {
             function ZKSYNC_NEAR_CALL_executeL2TxImpersonating(
                 abi,
                 txDataOffset
-            ) {
+            ) -> success {
                 let innerTxDataOffset := add(txDataOffset, 32)
                 let to := getTo(innerTxDataOffset)
                 let from := getFrom(innerTxDataOffset)
@@ -1466,7 +1469,7 @@ object "Bootloader" {
                     setTxOrigin(0)
                 }
 
-                let success := msgValueSimulatorMimicCall(
+                success := msgValueSimulatorMimicCall(
                     to,
                     from,
                     value,
@@ -3008,7 +3011,9 @@ object "Bootloader" {
 
                         let from := getFrom(innerTxDataOffset)
                         let iseoa := isEOA(from)
+                        <!-- @ifndef ACCOUNT_IMPERSONATING -->
                         assertEq(iseoa, true, "Only EIP-712 can use non-EOA")
+                        <!-- @endif -->
 
                         <!-- @endif -->
                         
@@ -3018,9 +3023,11 @@ object "Bootloader" {
                         assertEq(getPaymaster(innerTxDataOffset), 0, "paymaster non zero")
 
                         <!-- @if BOOTLOADER_TYPE=='proved_batch' -->
+                        <!-- @ifndef ACCOUNT_IMPERSONATING -->
                         assertEq(gt(getFrom(innerTxDataOffset), MAX_SYSTEM_CONTRACT_ADDR()), 1, "from in kernel space")
                         <!-- @endif -->
-                        
+                        <!-- @endif -->
+
                         assertEq(getReserved1(innerTxDataOffset), 0, "reserved1 non zero")
                         assertEq(getReserved2(innerTxDataOffset), 0, "reserved2 non zero")
                         assertEq(getReserved3(innerTxDataOffset), 0, "reserved3 non zero")
@@ -3036,7 +3043,9 @@ object "Bootloader" {
 
                         let from := getFrom(innerTxDataOffset)
                         let iseoa := isEOA(from)
+                        <!-- @ifndef ACCOUNT_IMPERSONATING -->
                         assertEq(iseoa, true, "Only EIP-712 can use non-EOA")
+                        <!-- @endif -->
 
                         <!-- @endif -->
                         
@@ -3044,9 +3053,11 @@ object "Bootloader" {
                         assertEq(getPaymaster(innerTxDataOffset), 0, "paymaster non zero")
 
                         <!-- @if BOOTLOADER_TYPE=='proved_batch' -->
+                        <!-- @ifndef ACCOUNT_IMPERSONATING -->
                         assertEq(gt(getFrom(innerTxDataOffset), MAX_SYSTEM_CONTRACT_ADDR()), 1, "from in kernel space")
                         <!-- @endif -->
-                        
+                        <!-- @endif -->
+
                         assertEq(getReserved0(innerTxDataOffset), 0, "reserved0 non zero")
                         assertEq(getReserved1(innerTxDataOffset), 0, "reserved1 non zero")
                         assertEq(getReserved2(innerTxDataOffset), 0, "reserved2 non zero")
@@ -3062,14 +3073,18 @@ object "Bootloader" {
 
                         let from := getFrom(innerTxDataOffset)
                         let iseoa := isEOA(from)
+                        <!-- @ifndef ACCOUNT_IMPERSONATING -->
                         assertEq(iseoa, true, "Only EIP-712 can use non-EOA")
+                        <!-- @endif -->
 
                         <!-- @endif -->
                         
                         <!-- @if BOOTLOADER_TYPE=='proved_block' -->
+                        <!-- @ifndef ACCOUNT_IMPERSONATING -->
                         assertEq(gt(getFrom(innerTxDataOffset), MAX_SYSTEM_CONTRACT_ADDR()), 1, "from in kernel space")
                         <!-- @endif -->
-                        
+                        <!-- @endif -->
+
                         assertEq(getReserved0(innerTxDataOffset), 0, "reserved0 non zero")
                         assertEq(getReserved1(innerTxDataOffset), 0, "reserved1 non zero")
                         assertEq(getReserved2(innerTxDataOffset), 0, "reserved2 non zero")
@@ -3087,7 +3102,9 @@ object "Bootloader" {
                         }
 
                         <!-- @if BOOTLOADER_TYPE=='proved_batch' -->
+                        <!-- @ifndef ACCOUNT_IMPERSONATING -->
                         assertEq(gt(getFrom(innerTxDataOffset), MAX_SYSTEM_CONTRACT_ADDR()), 1, "from in kernel space")
+                        <!-- @endif -->
                         <!-- @endif -->
                         assertEq(getReserved0(innerTxDataOffset), 0, "reserved0 non zero")
                         assertEq(getReserved1(innerTxDataOffset), 0, "reserved1 non zero")
