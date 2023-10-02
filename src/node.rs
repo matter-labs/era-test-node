@@ -24,6 +24,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use crate::eth_test::EthTestNodeNamespaceT;
 use vm::{
     constants::{
         BLOCK_GAS_LIMIT, BLOCK_OVERHEAD_PUBDATA, ETH_CALL_GAS_LIMIT, MAX_PUBDATA_PER_BLOCK,
@@ -66,7 +67,6 @@ use zksync_web3_decl::{
     error::Web3Error,
     types::{FeeHistory, Filter, FilterChanges},
 };
-use crate::eth_test::EthTestNodeNamespaceT;
 
 /// Max possible size of an ABI encoded tx (in bytes).
 pub const MAX_TX_SIZE: usize = 1_000_000;
@@ -288,7 +288,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
         &self,
         storage: StoragePtr<ST>,
     ) -> (L1BatchEnv, BlockContext) {
-        // TOOD: is this hack fine?
+        // TODO: is this hack fine?
         let last_l2_block = load_last_l2_block(storage).unwrap_or_else(|| vm::L2Block {
             number: 0,
             timestamp: 0,
@@ -438,9 +438,15 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
         let impersonating = if self
             .impersonated_accounts
             .contains(&l2_tx.common_data.initiator_address)
-        { true } else { false };
+        {
+            true
+        } else {
+            false
+        };
         let system_env = self.create_system_env(
-            self.system_contracts.contracts_for_fee_estimate(impersonating).clone(),
+            self.system_contracts
+                .contracts_for_fee_estimate(impersonating)
+                .clone(),
             execution_mode,
         );
 
@@ -681,7 +687,7 @@ pub struct InMemoryNode<S> {
 impl<S> Clone for InMemoryNode<S> {
     fn clone(&self) -> Self {
         Self {
-            inner: self.inner.clone()
+            inner: self.inner.clone(),
         }
     }
 }
@@ -2521,7 +2527,9 @@ impl<S: Send + Sync + 'static + ForkSource + std::fmt::Debug> EthNamespaceT for 
     }
 }
 
-impl<S: Send + Sync + 'static + ForkSource + std::fmt::Debug> EthTestNodeNamespaceT for InMemoryNode<S> {
+impl<S: Send + Sync + 'static + ForkSource + std::fmt::Debug> EthTestNodeNamespaceT
+    for InMemoryNode<S>
+{
     /// Sends a transaction to the L2 network. Can be used for the impersonated account.
     ///
     /// # Arguments
@@ -2556,7 +2564,10 @@ impl<S: Send + Sync + 'static + ForkSource + std::fmt::Debug> EthTestNodeNamespa
             }
         };
         // v = 27 corresponds to 0
-        let bytes = tx_req.get_signed_bytes(&PackedEthSignature::from_rsv(&H256::default(), &H256::default(), 0), chain_id);
+        let bytes = tx_req.get_signed_bytes(
+            &PackedEthSignature::from_rsv(&H256::default(), &H256::default(), 0),
+            chain_id,
+        );
         let mut l2_tx: L2Tx = match L2Tx::from_request(tx_req, MAX_TX_SIZE) {
             Ok(tx) => tx,
             Err(e) => {
@@ -2570,18 +2581,21 @@ impl<S: Send + Sync + 'static + ForkSource + std::fmt::Debug> EthTestNodeNamespa
             return futures::future::err(into_jsrpc_error(Web3Error::InvalidTransactionData(
                 zksync_types::ethabi::Error::InvalidData,
             )))
-                .boxed();
+            .boxed();
         };
 
         match self.inner.read() {
             Ok(reader) => {
-                if !reader.impersonated_accounts.contains(&l2_tx.common_data.initiator_address) {
-                    return futures::future::err(into_jsrpc_error(Web3Error::InvalidTransactionData(
-                        zksync_types::ethabi::Error::InvalidData,
-                    )))
-                        .boxed()
+                if !reader
+                    .impersonated_accounts
+                    .contains(&l2_tx.common_data.initiator_address)
+                {
+                    return futures::future::err(into_jsrpc_error(
+                        Web3Error::InvalidTransactionData(zksync_types::ethabi::Error::InvalidData),
+                    ))
+                    .boxed();
                 }
-            },
+            }
             Err(_) => {
                 return futures::future::err(into_jsrpc_error(Web3Error::InternalError)).boxed()
             }
@@ -2595,7 +2609,7 @@ impl<S: Send + Sync + 'static + ForkSource + std::fmt::Debug> EthTestNodeNamespa
                     error_message,
                     l2_tx.hash().as_bytes().to_vec(),
                 )))
-                    .boxed()
+                .boxed()
             }
         }
     }

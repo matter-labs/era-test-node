@@ -61,7 +61,11 @@ impl SystemContracts {
         self.contracts(TxExecutionMode::EstimateFee, impersonating)
     }
 
-    pub fn contracts(&self, execution_mode: TxExecutionMode, impersonating: bool) -> &BaseSystemContracts {
+    pub fn contracts(
+        &self,
+        execution_mode: TxExecutionMode,
+        impersonating: bool,
+    ) -> &BaseSystemContracts {
         match (execution_mode, impersonating) {
             // 'real' contracts, that do all the checks.
             (TxExecutionMode::VerifyExecute, false) => &self.baseline_contracts,
