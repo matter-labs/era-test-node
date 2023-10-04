@@ -456,9 +456,18 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
         // We are using binary search to find the minimal values of gas_limit under which the transaction succeeds
         let mut lower_bound = 0;
         let mut upper_bound = MAX_L2_TX_GAS_LIMIT as u32;
+        let mut attempt_count = 1;
 
+        log::trace!("Starting gas estimation loop");
         while lower_bound + ESTIMATE_GAS_ACCEPTABLE_OVERESTIMATION < upper_bound {
             let mid = (lower_bound + upper_bound) / 2;
+            log::trace!(
+                "Attempt {} (lower_bound: {}, upper_bound: {}, mid: {})",
+                attempt_count,
+                lower_bound,
+                upper_bound,
+                mid
+            );
             let try_gas_limit = gas_for_bytecodes_pubdata + mid;
 
             let estimate_gas_result = InMemoryNodeInner::estimate_gas_step(
@@ -472,12 +481,19 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
             );
 
             if estimate_gas_result.result.is_failed() {
+                log::trace!("Attempt {} FAILED", attempt_count);
                 lower_bound = mid + 1;
             } else {
+                log::trace!("Attempt {} SUCCEEDED", attempt_count);
                 upper_bound = mid;
             }
+            attempt_count += 1;
         }
 
+        log::trace!("Gas Estimation Values:");
+        log::trace!("  Final upper_bound: {}", upper_bound);
+        log::trace!("  ESTIMATE_GAS_SCALE_FACTOR: {}", ESTIMATE_GAS_SCALE_FACTOR);
+        log::trace!("  MAX_L2_TX_GAS_LIMIT: {}", MAX_L2_TX_GAS_LIMIT);
         let tx_body_gas_limit = cmp::min(
             MAX_L2_TX_GAS_LIMIT as u32,
             (upper_bound as f32 * ESTIMATE_GAS_SCALE_FACTOR) as u32,
@@ -586,6 +602,11 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
                     }
                 };
 
+                log::trace!("Gas Estimation Results");
+                log::trace!("  tx_body_gas_limit: {}", tx_body_gas_limit);
+                log::trace!("  gas_for_bytecodes_pubdata: {}", gas_for_bytecodes_pubdata);
+                log::trace!("  overhead: {}", overhead);
+                log::trace!("  full_gas_limit: {}", full_gas_limit);
                 let fee = Fee {
                     max_fee_per_gas: base_fee.into(),
                     max_priority_fee_per_gas: 0u32.into(),
@@ -3542,8 +3563,7 @@ mod tests {
                         .get(hash)
                         .unwrap_or_else(|| panic!("state was not cached for block {}", miniblock))
                 })
-                .map(|state| state.get(&input_storage_key))
-                .flatten()
+                .and_then(|state| state.get(&input_storage_key))
                 .copied();
 
             assert_eq!(
@@ -3630,7 +3650,7 @@ mod tests {
         let node = InMemoryNode::<HttpForkSource>::default();
         node.inner
             .write()
-            .and_then(|mut writer| {
+            .map(|mut writer| {
                 let historical_block = Block::<TransactionVariant> {
                     hash: H256::repeat_byte(0x2),
                     number: U64::from(2),
@@ -3647,8 +3667,6 @@ mod tests {
                 writer
                     .blocks
                     .insert(historical_block.hash, historical_block);
-
-                Ok(())
             })
             .expect("failed setting storage for historical block");
 
@@ -3705,7 +3723,7 @@ mod tests {
         );
         node.inner
             .write()
-            .and_then(|mut writer| {
+            .map(|mut writer| {
                 let historical_block = Block::<TransactionVariant> {
                     hash: H256::repeat_byte(0x2),
                     number: U64::from(2),
@@ -3718,8 +3736,6 @@ mod tests {
                 writer
                     .blocks
                     .insert(historical_block.hash, historical_block);
-
-                Ok(())
             })
             .expect("failed setting storage for historical block");
 
