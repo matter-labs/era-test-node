@@ -3,6 +3,7 @@ const preprocess = require('preprocess');
 import { existsSync, mkdirSync, write, writeFileSync } from 'fs';
 import { SYSTEM_CONTRACTS, getRevertSelector, getTransactionUtils } from './constants';
 import * as hre from 'hardhat';
+import * as fs from 'fs';
 import { ethers } from 'ethers';
 import { renderFile } from 'template-file';
 import { utils } from 'zksync-web3';
@@ -35,50 +36,9 @@ function getPaddedSelector(contractName: string, method: string): string {
 
 const SYSTEM_PARAMS = require('../SystemConfig.json');
 
-function getSystemContextExpectedHash() {
-    const artifact = hre.artifacts.readArtifactSync('SystemContext');
-    return ethers.utils.hexlify(utils.hashBytecode(artifact.bytecode));
-}
-
-function upgradeSystemContextCalldata() {
-    // Here we need to encode the force deployment for the system context contract as well as transform
-    // it into writing of the calldata into the bootloader memory.
-
-    const newHash = getSystemContextExpectedHash();
-    const artifact = new ethers.utils.Interface(hre.artifacts.readArtifactSync('ContractDeployer').abi);
-
-    const forceDeplyment: ForceDeployment = {
-        bytecodeHash: newHash,
-        newAddress: SYSTEM_CONTRACTS.systemContext.address, 
-        callConstructor: false,
-        value: 0,
-        input: '0x'
-    };
-
-    let calldata = artifact.encodeFunctionData('forceDeployOnAddresses', [[forceDeplyment]]);
-    const originalLength = (calldata.length - 2) / 2;
-
-    // Padding calldata from the right. We really need to do it, since Yul would "implicitly" pad it from the left and it
-    // it is not what we want.
-    while((calldata.length - 2) % 64 != 0) {
-        calldata += '0';
-    }
-
-    // We will apply tabulation to make the compiled bootloader code more readable
-    const TABULATION = '\t\t\t\t\t';
-    // In the first slot we need to store the calldata's length
-    let data = `mstore(0x00, ${originalLength})\n`;
-    
-    const slices = (calldata.length - 2) / 64;
-
-    for(let slice = 0; slice < slices; slice++) {
-        const offset = slice * 32;
-        const sliceHex = calldata.slice(2 + offset * 2, 2 + offset * 2 + 64);
-
-        data += `${TABULATION}mstore(${offset + 32}, 0x${sliceHex})\n`;
-    }
-
-    return data;
+function getKeccak256ExpectedHash() {
+    const bytecode = fs.readFileSync('contracts/precompiles/artifacts/Keccak256.yul/Keccak256.yul.zbin');
+    return ethers.utils.hexlify(utils.hashBytecode(bytecode));
 }
 
 // Maybe in the future some of these params will be passed
@@ -87,7 +47,7 @@ let params = {
     MARK_BATCH_AS_REPUBLISHED_SELECTOR: getSelector('KnownCodesStorage', 'markFactoryDeps'),
     VALIDATE_TX_SELECTOR: getSelector('IAccount', 'validateTransaction'),
     EXECUTE_TX_SELECTOR: getSelector('DefaultAccount', 'executeTransaction'),
-    RIGHT_PADDED_GET_ACCOUNT_VERSION_SELECTOR: getPaddedSelector('ContractDeployer','extendedAccountVersion'),
+    RIGHT_PADDED_GET_ACCOUNT_VERSION_SELECTOR: getPaddedSelector('ContractDeployer', 'extendedAccountVersion'),
     RIGHT_PADDED_GET_RAW_CODE_HASH_SELECTOR: getPaddedSelector('AccountCodeStorage', 'getRawCodeHash'),
     PAY_FOR_TX_SELECTOR: getSelector('DefaultAccount', 'payForTransaction'),
     PRE_PAYMASTER_SELECTOR: getSelector('DefaultAccount', 'prepareForPaymaster'),
@@ -108,10 +68,10 @@ let params = {
     RIGHT_PADDED_VALIDATE_NONCE_USAGE_SELECTOR: getPaddedSelector('INonceHolder', 'validateNonceUsage'),
     RIGHT_PADDED_MINT_ETHER_SELECTOR: getPaddedSelector('L2EthToken', 'mint'),
     GET_TX_HASHES_SELECTOR: getSelector('BootloaderUtilities', 'getTransactionHashes'),
-    CREATE_SELECTOR: getSelector('ContractDeployer','create'),
-    CREATE2_SELECTOR: getSelector('ContractDeployer','create2'),
-    CREATE_ACCOUNT_SELECTOR: getSelector('ContractDeployer','createAccount'),
-    CREATE2_ACCOUNT_SELECTOR: getSelector('ContractDeployer','create2Account'),
+    CREATE_SELECTOR: getSelector('ContractDeployer', 'create'),
+    CREATE2_SELECTOR: getSelector('ContractDeployer', 'create2'),
+    CREATE_ACCOUNT_SELECTOR: getSelector('ContractDeployer', 'createAccount'),
+    CREATE2_ACCOUNT_SELECTOR: getSelector('ContractDeployer', 'create2Account'),
     PADDED_TRANSFER_FROM_TO_SELECTOR: getPaddedSelector('L2EthToken', 'transferFromTo'),
     SUCCESSFUL_ACCOUNT_VALIDATION_MAGIC_VALUE: getPaddedSelector('IAccount', 'validateTransaction'),
     SUCCESSFUL_PAYMASTER_VALIDATION_MAGIC_VALUE: getPaddedSelector('IPaymaster', 'validateAndPayForPaymasterTransaction'),
@@ -123,15 +83,15 @@ let params = {
     COMPRESSED_BYTECODES_SLOTS: 32768,
     ENSURE_RETURNED_MAGIC: 1,
     FORBID_ZERO_GAS_PER_PUBDATA: 1,
-    SYSTEM_CONTEXT_EXPECTED_CODE_HASH: getSystemContextExpectedHash(),
-    UPGRADE_SYSTEM_CONTEXT_CALLDATA: upgradeSystemContextCalldata(),
-    // One of "worst case" scenarios for the number of state diffs in a batch is when 120kb of pubdata is spent 
+    KECCAK256_EXPECTED_CODE_HASH: getKeccak256ExpectedHash(),
+    PADDED_FORCE_DEPLOY_KECCAK256_SELECTOR: getPaddedSelector('ContractDeployer', 'forceDeployKeccak256'),
+    // One of "worst case" scenarios for the number of state diffs in a batch is when 120kb of pubdata is spent
     // on repeated writes, that are all zeroed out. In this case, the number of diffs is 120k / 5 = 24k. This means that they will have
-    // accoomdate 6528000 bytes of calldata for the uncompressed state diffs. Adding 120k on top leaves us with 
+    // accoomdate 6528000 bytes of calldata for the uncompressed state diffs. Adding 120k on top leaves us with
     // roughly 6650000 bytes needed for calldata. 207813 slots are needed to accomodate this amount of data.
     // We round up to 208000 slots just in case.
     //
-    // In theory though much more calldata could be used (if for instance 1 byte is used for enum index). It is the responsibility of the 
+    // In theory though much more calldata could be used (if for instance 1 byte is used for enum index). It is the responsibility of the
     // operator to ensure that it can form the correct calldata for the L1Messenger.
     OPERATOR_PROVIDED_L1_MESSENGER_PUBDATA_SLOTS: 208000,
     ...SYSTEM_PARAMS
@@ -139,7 +99,7 @@ let params = {
 
 async function main() {
     const bootloader = await renderFile('bootloader/bootloader.yul', params);
-    // The overhead is unknown for gas tests and so it should be zero to calculate it 
+    // The overhead is unknown for gas tests and so it should be zero to calculate it
     const gasTestBootloaderTemplate = await renderFile('bootloader/bootloader.yul', {
         ...params,
         L2_TX_INTRINSIC_GAS: 0,
@@ -158,7 +118,7 @@ async function main() {
     const provedBatchBootloader = preprocess.preprocess(
         bootloader,
         { BOOTLOADER_TYPE: 'proved_batch' }
-    );    
+    );
     console.log('Preprocessing playground block bootloader');
     const playgroundBatchBootloader = preprocess.preprocess(
         bootloader,
@@ -185,7 +145,7 @@ async function main() {
         { BOOTLOADER_TYPE: 'playground_batch', ACCOUNT_IMPERSONATING: true }
     );
 
-    if(!existsSync(OUTPUT_DIR)) {
+    if (!existsSync(OUTPUT_DIR)) {
         mkdirSync(OUTPUT_DIR);
     }
 
