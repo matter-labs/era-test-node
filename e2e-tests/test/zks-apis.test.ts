@@ -1,9 +1,9 @@
 import { expect } from "chai";
 import { deployContract, getTestProvider } from "../helpers/utils";
-import * as hre from "hardhat";
 import { Wallet } from "zksync-web3";
 import { RichAccounts } from "../helpers/constants";
 import { ethers } from "ethers";
+import * as hre from "hardhat";
 import { TransactionRequest } from "zksync-web3/build/src/types";
 import { Deployer } from "@matterlabs/hardhat-zksync-deploy";
 
@@ -100,5 +100,39 @@ describe("zks_getBlockDetails", function () {
     const details = await provider.send("zks_getBlockDetails", [latestBlock.number]);
 
     expect(details["timestamp"]).to.equal(latestBlock.timestamp);
+  });
+});
+
+describe("zks_getBytecodeByHash", function () {
+  it("Should fetch the stored bytecode at address", async function () {
+    // Arrange
+    const wallet = new Wallet(RichAccounts[0].PrivateKey);
+    const deployer = new Deployer(hre, wallet);
+    const artifact = await deployer.loadArtifact("Greeter");
+    const greeter = await deployContract(deployer, "Greeter", ["Hi"]);
+    const deployedContract = await greeter.deployTransaction.wait();
+    expect(await greeter.greet()).to.eq("Hi");
+
+    // get the bytecode hash from the event
+    const contractDeployedHash = ethers.utils
+      .keccak256(ethers.utils.toUtf8Bytes("ContractDeployed(address,bytes32,address)"))
+      .substring(2);
+    const logs = await provider.send("eth_getLogs", [
+      {
+        fromBlock: ethers.utils.hexlify(deployedContract.blockNumber),
+        toBlock: ethers.utils.hexlify(deployedContract.blockNumber),
+        address: "0x0000000000000000000000000000000000008006", // L2 Deployer address
+        topics: [contractDeployedHash],
+      },
+    ]);
+    expect(logs).to.not.be.empty;
+    expect(logs[0].topics).to.have.lengthOf(4);
+    const bytecodeHash = logs[0].topics[2];
+
+    // Act
+    const bytecode = await provider.send("zks_getBytecodeByHash", [bytecodeHash]);
+
+    // Assert
+    expect(ethers.utils.hexlify(bytecode)).to.equal(artifact.deployedBytecode);
   });
 });
