@@ -1,6 +1,7 @@
 use crate::cache::CacheConfig;
 use crate::hardhat::{HardhatNamespaceImpl, HardhatNamespaceT};
-use crate::node::{ShowGasDetails, ShowStorageLogs, ShowVMDetails};
+use crate::node::{InMemoryNodeConfig, ShowGasDetails, ShowStorageLogs, ShowVMDetails};
+use crate::observability::Observability;
 use clap::{Parser, Subcommand, ValueEnum};
 use configuration_api::ConfigurationApiNamespaceT;
 use debug::DebugNamespaceImpl;
@@ -8,9 +9,8 @@ use evm::{EvmNamespaceImpl, EvmNamespaceT};
 use fork::{ForkDetails, ForkSource};
 use logging_middleware::LoggingMiddleware;
 use node::ShowCalls;
-use simplelog::{
-    ColorChoice, CombinedLogger, ConfigBuilder, LevelFilter, TermLogger, TerminalMode, WriteLogger,
-};
+use observability::LogLevel;
+use tracing_subscriber::filter::LevelFilter;
 use zks::ZkMockNamespaceImpl;
 
 mod bootloader_debug;
@@ -27,6 +27,7 @@ mod hardhat;
 mod http_fork_source;
 mod logging_middleware;
 mod node;
+pub mod observability;
 mod resolver;
 mod system_contracts;
 mod testing;
@@ -36,15 +37,12 @@ mod zks;
 use node::InMemoryNode;
 use zksync_core::api_server::web3::namespaces::NetNamespace;
 
+use std::fs::File;
 use std::{
     env,
-    fs::File,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     str::FromStr,
 };
-
-use tracing::Level;
-use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 use futures::{
     channel::oneshot,
@@ -149,28 +147,6 @@ async fn build_json_http<
     });
 
     tokio::spawn(recv.map(drop))
-}
-
-/// Log filter level for the node.
-#[derive(Debug, Clone, ValueEnum)]
-enum LogLevel {
-    Trace,
-    Debug,
-    Info,
-    Warn,
-    Error,
-}
-
-impl From<LogLevel> for LevelFilter {
-    fn from(value: LogLevel) -> Self {
-        match value {
-            LogLevel::Trace => LevelFilter::Trace,
-            LogLevel::Debug => LevelFilter::Debug,
-            LogLevel::Info => LevelFilter::Info,
-            LogLevel::Warn => LevelFilter::Warn,
-            LogLevel::Error => LevelFilter::Error,
-        }
-    }
 }
 
 /// Cache type config for the node.
@@ -285,29 +261,16 @@ struct ReplayArgs {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let opt = Cli::parse();
-
     let log_level_filter = LevelFilter::from(opt.log);
-    let log_config = ConfigBuilder::new()
-        .add_filter_allow_str("era_test_node")
-        .build();
-    CombinedLogger::init(vec![
-        TermLogger::new(
-            log_level_filter,
-            log_config.clone(),
-            TerminalMode::Mixed,
-            ColorChoice::Auto,
-        ),
-        WriteLogger::new(
-            log_level_filter,
-            log_config,
-            File::create(opt.log_file_path).unwrap(),
-        ),
-    ])
-    .expect("failed instantiating logger");
+    let log_file = File::create(opt.log_file_path)?;
+
+    // Initialize the tracing subscriber
+    let observability =
+        Observability::init(String::from("era_test_node"), log_level_filter, log_file)?;
 
     if matches!(opt.dev_system_contracts, DevSystemContracts::Local) {
         if let Some(path) = env::var_os("ZKSYNC_HOME") {
-            log::info!("+++++ Reading local contracts from {:?} +++++", path);
+            tracing::info!("+++++ Reading local contracts from {:?} +++++", path);
         }
     }
     let cache_config = match opt.cache {
@@ -318,15 +281,6 @@ async fn main() -> anyhow::Result<()> {
             reset: opt.reset_cache,
         },
     };
-
-    let filter = EnvFilter::from_default_env();
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::TRACE)
-        .with_env_filter(filter)
-        .finish();
-
-    // Initialize the subscriber
-    tracing::subscriber::set_global_default(subscriber).expect("failed to set tracing subscriber");
 
     let fork_details = match &opt.command {
         Command::Run => None,
@@ -357,27 +311,30 @@ async fn main() -> anyhow::Result<()> {
 
     let node = InMemoryNode::new(
         fork_details,
-        opt.show_calls,
-        opt.show_storage_logs,
-        opt.show_vm_details,
-        opt.show_gas_details,
-        opt.resolve_hashes,
-        &system_contracts_options,
+        Some(observability),
+        InMemoryNodeConfig {
+            show_calls: opt.show_calls,
+            show_storage_logs: opt.show_storage_logs,
+            show_vm_details: opt.show_vm_details,
+            show_gas_details: opt.show_gas_details,
+            resolve_hashes: opt.resolve_hashes,
+            system_contracts_options,
+        },
     );
 
     if !transactions_to_replay.is_empty() {
         let _ = node.apply_txs(transactions_to_replay);
     }
 
-    log::info!("Rich Accounts");
-    log::info!("=============");
+    tracing::info!("Rich Accounts");
+    tracing::info!("=============");
     for (index, wallet) in RICH_WALLETS.iter().enumerate() {
         let address = wallet.0;
         let private_key = wallet.1;
         node.set_rich_account(H160::from_str(address).unwrap());
-        log::info!("Account #{}: {} (1_000_000_000_000 ETH)", index, address);
-        log::info!("Private Key: {}", private_key);
-        log::info!("");
+        tracing::info!("Account #{}: {} (1_000_000_000_000 ETH)", index, address);
+        tracing::info!("Private Key: {}", private_key);
+        tracing::info!("");
     }
 
     let net = NetNamespace::new(L2ChainId::from(TEST_NODE_NETWORK_ID));
@@ -400,9 +357,9 @@ async fn main() -> anyhow::Result<()> {
     )
     .await;
 
-    log::info!("========================================");
-    log::info!("  Node is ready at 127.0.0.1:{}", opt.port);
-    log::info!("========================================");
+    tracing::info!("========================================");
+    tracing::info!("  Node is ready at 127.0.0.1:{}", opt.port);
+    tracing::info!("========================================");
 
     future::select_all(vec![threads]).await.0.unwrap();
 
