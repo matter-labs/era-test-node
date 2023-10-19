@@ -176,7 +176,7 @@ jobs:
           )
           assets=()
           for asset in ./era_test_node-*.tar.gz*; do
-              assets+=("-a" "$asset/$asset")
+              assets+=("$asset/$asset")
           done
           tag_name="${{ env.VERSION }}"
-          echo "$body" | gh release create --draft "${assets[@]}" -F "-" "$tag_name"
+          echo "$body" | gh release create "$tag_name" "${assets[@]}" --draft -F "-"
