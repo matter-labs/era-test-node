@@ -1211,6 +1211,35 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         }
     }
 
+    // Validates L2 transaction
+    fn validate_tx(&self, tx: &L2Tx) -> Result<(), String> {
+        let max_gas = U256::from(u32::MAX);
+        if tx.common_data.fee.gas_limit > max_gas
+            || tx.common_data.fee.gas_per_pubdata_limit > max_gas
+        {
+            return Err("exceeds block gas limit".into());
+        }
+
+        if tx.common_data.fee.max_fee_per_gas < L2_GAS_PRICE.into() {
+            tracing::info!(
+                "Submitted Tx is Unexecutable {:?} because of MaxFeePerGasTooLow {}",
+                tx.hash(),
+                tx.common_data.fee.max_fee_per_gas
+            );
+            return Err("block base fee higher than max fee per gas".into());
+        }
+
+        if tx.common_data.fee.max_fee_per_gas < tx.common_data.fee.max_priority_fee_per_gas {
+            tracing::info!(
+                "Submitted Tx is Unexecutable {:?} because of MaxPriorityFeeGreaterThanMaxFee {}",
+                tx.hash(),
+                tx.common_data.fee.max_fee_per_gas
+            );
+            return Err("max priority fee per gas higher than max fee per gas".into());
+        }
+        Ok(())
+    }
+
     /// Executes the given L2 transaction and returns all the VM logs.
     pub fn run_l2_tx_inner(
         &self,
@@ -1425,7 +1454,17 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
     /// Runs L2 transaction and commits it to a new block.
     pub fn run_l2_tx(&self, l2_tx: L2Tx, execution_mode: TxExecutionMode) -> Result<(), String> {
         let tx_hash = l2_tx.hash();
+
         tracing::info!("");
+        tracing::info!("Validating {}", format!("{:?}", tx_hash).bold());
+
+        match self.validate_tx(&l2_tx) {
+            Ok(_) => (),
+            Err(e) => {
+                return Err(e);
+            }
+        };
+
         tracing::info!("Executing {}", format!("{:?}", tx_hash).bold());
 
         {
@@ -1637,5 +1676,56 @@ impl BlockContext {
             miniblock: self.miniblock.saturating_add(1),
             timestamp: self.timestamp.saturating_add(1),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{http_fork_source::HttpForkSource, node::InMemoryNode, testing};
+
+    #[tokio::test]
+    async fn test_run_l2_tx_validates_tx_gas_limit_too_high() {
+        let node = InMemoryNode::<HttpForkSource>::default();
+        let tx = testing::TransactionBuilder::new()
+            .set_gas_limit(U256::from(u32::MAX) + 1)
+            .build();
+        node.set_rich_account(tx.common_data.initiator_address);
+
+        let result = node.run_l2_tx(tx, TxExecutionMode::VerifyExecute);
+
+        assert_eq!(result.err(), Some("exceeds block gas limit".into()));
+    }
+
+    #[tokio::test]
+    async fn test_run_l2_tx_validates_tx_max_fee_per_gas_too_low() {
+        let node = InMemoryNode::<HttpForkSource>::default();
+        let tx = testing::TransactionBuilder::new()
+            .set_max_fee_per_gas(U256::from(250_000_000 - 1))
+            .build();
+        node.set_rich_account(tx.common_data.initiator_address);
+
+        let result = node.run_l2_tx(tx, TxExecutionMode::VerifyExecute);
+
+        assert_eq!(
+            result.err(),
+            Some("block base fee higher than max fee per gas".into())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_run_l2_tx_validates_tx_max_priority_fee_per_gas_higher_than_max_fee_per_gas() {
+        let node = InMemoryNode::<HttpForkSource>::default();
+        let tx = testing::TransactionBuilder::new()
+            .set_max_priority_fee_per_gas(U256::from(250_000_000 + 1))
+            .build();
+        node.set_rich_account(tx.common_data.initiator_address);
+
+        let result = node.run_l2_tx(tx, TxExecutionMode::VerifyExecute);
+
+        assert_eq!(
+            result.err(),
+            Some("max priority fee per gas higher than max fee per gas".into())
+        );
     }
 }
