@@ -490,7 +490,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> EthNamespa
                         from: Some(info.tx.initiator_account()),
                         to: Some(info.tx.recipient_account()),
                         value: info.tx.execute.value,
-                        gas_price: Default::default(),
+                        gas_price: Some(U256::from(0)),
                         gas: Default::default(),
                         input: input_data.data.into(),
                         v: Some(chain_id.into()),
@@ -1375,17 +1375,55 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_node_run_has_genesis_block() {
+    async fn test_node_has_genesis_block() {
         let node = InMemoryNode::<HttpForkSource>::default();
 
         let block = node
             .get_block_by_number(BlockNumber::Latest, false)
             .await
-            .expect("failed fetching block by hash")
+            .expect("failed fetching block by number")
             .expect("no block");
 
         assert_eq!(0, block.number.as_u64());
         assert_eq!(compute_hash(0, H256::zero()), block.hash);
+    }
+
+    #[tokio::test]
+    async fn test_node_creates_genesis_block_with_hash_and_zero_parent_hash() {
+        let node = InMemoryNode::<HttpForkSource>::default();
+
+        let block = node
+            .get_block_by_hash(compute_hash(0, H256::zero()), false)
+            .await
+            .expect("failed fetching block by hash")
+            .expect("no block");
+
+        assert_eq!(block.parent_hash, H256::zero());
+    }
+
+    #[tokio::test]
+    async fn test_node_produces_blocks_with_parent_hash_links() {
+        let node = InMemoryNode::<HttpForkSource>::default();
+        testing::apply_tx(&node, H256::repeat_byte(0x01));
+
+        let genesis_block = node
+            .get_block_by_number(BlockNumber::from(0), false)
+            .await
+            .expect("failed fetching block by number")
+            .expect("no block");
+        let first_block = node
+            .get_block_by_number(BlockNumber::from(1), false)
+            .await
+            .expect("failed fetching block by number")
+            .expect("no block");
+        let second_block = node
+            .get_block_by_number(BlockNumber::from(2), false)
+            .await
+            .expect("failed fetching block by number")
+            .expect("no block");
+
+        assert_eq!(genesis_block.hash, first_block.parent_hash);
+        assert_eq!(first_block.hash, second_block.parent_hash);
     }
 
     #[tokio::test]
@@ -2542,11 +2580,11 @@ mod tests {
 
         let storage = inner.fork_storage.inner.read().unwrap();
         let expected_snapshot = Snapshot {
-            current_timestamp: inner.current_timestamp.clone(),
-            current_batch: inner.current_batch.clone(),
-            current_miniblock: inner.current_miniblock.clone(),
-            current_miniblock_hash: inner.current_miniblock_hash.clone(),
-            l1_gas_price: inner.l1_gas_price.clone(),
+            current_timestamp: inner.current_timestamp,
+            current_batch: inner.current_batch,
+            current_miniblock: inner.current_miniblock,
+            current_miniblock_hash: inner.current_miniblock_hash,
+            l1_gas_price: inner.l1_gas_price,
             tx_results: inner.tx_results.clone(),
             blocks: inner.blocks.clone(),
             block_hashes: inner.block_hashes.clone(),
@@ -2646,11 +2684,11 @@ mod tests {
         let expected_snapshot = {
             let storage = inner.fork_storage.inner.read().unwrap();
             Snapshot {
-                current_timestamp: inner.current_timestamp.clone(),
-                current_batch: inner.current_batch.clone(),
-                current_miniblock: inner.current_miniblock.clone(),
-                current_miniblock_hash: inner.current_miniblock_hash.clone(),
-                l1_gas_price: inner.l1_gas_price.clone(),
+                current_timestamp: inner.current_timestamp,
+                current_batch: inner.current_batch,
+                current_miniblock: inner.current_miniblock,
+                current_miniblock_hash: inner.current_miniblock_hash,
+                l1_gas_price: inner.l1_gas_price,
                 tx_results: inner.tx_results.clone(),
                 blocks: inner.blocks.clone(),
                 block_hashes: inner.block_hashes.clone(),
@@ -2984,7 +3022,7 @@ mod tests {
             .expect("no transaction");
 
         assert_eq!(input_tx_hash, actual_tx.hash);
-        assert_eq!(Some(U64::from(input_block_number)), actual_tx.block_number);
+        assert_eq!(Some(input_block_number), actual_tx.block_number);
     }
 
     #[tokio::test]
@@ -3010,7 +3048,7 @@ mod tests {
             TransactionResponseBuilder::new()
                 .set_hash(input_tx_hash)
                 .set_block_hash(input_block_hash)
-                .set_block_number(U64::from(input_block_number))
+                .set_block_number(input_block_number)
                 .build(),
         );
 
