@@ -1,6 +1,7 @@
 //! In-memory node, that supports forking other networks.
 use crate::{
     bootloader_debug::{BootloaderDebug, BootloaderDebugTracer},
+    cheatcodes::{CheatcodeNodeContext, CheatcodeTracer},
     console_log::ConsoleLogHandler,
     deps::InMemoryStorage,
     filters::EthFilters,
@@ -21,7 +22,7 @@ use std::{
     cmp::{self},
     collections::{HashMap, HashSet},
     str::FromStr,
-    sync::{Arc, RwLock},
+    sync::{Arc, Mutex, RwLock},
 };
 
 use multivm::interface::{
@@ -868,13 +869,13 @@ fn contract_address_from_tx_result(execution_result: &VmExecutionResultAndLogs) 
     None
 }
 
-impl<S: ForkSource + std::fmt::Debug + Clone> Default for InMemoryNode<S> {
+impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> Default for InMemoryNode<S> {
     fn default() -> Self {
         InMemoryNode::new(None, None, InMemoryNodeConfig::default())
     }
 }
 
-impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
+impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> InMemoryNode<S> {
     pub fn new(
         fork: Option<ForkDetails<S>>,
         observability: Option<Observability>,
@@ -998,16 +999,17 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
             .write()
             .map_err(|e| format!("Failed to acquire write lock: {}", e))?;
 
-        let storage = StorageView::new(&inner.fork_storage).to_rc_ptr();
+        let fork_storage = inner.fork_storage.clone();
+        let storage = StorageView::new(&fork_storage).to_rc_ptr();
 
         let bootloader_code = inner.system_contracts.contracts_for_l2_call();
 
         // init vm
 
-        let (batch_env, _) = inner.create_l1_batch_env(storage.clone());
+        let (batch_env, block_ctx) = inner.create_l1_batch_env(storage.clone());
         let system_env = inner.create_system_env(bootloader_code.clone(), execution_mode);
 
-        let mut vm = Vm::new(batch_env, system_env, storage, HistoryDisabled);
+        let mut vm = Vm::new(batch_env.clone(), system_env, storage, HistoryDisabled);
 
         // We must inject *some* signature (otherwise bootloader code fails to generate hash).
         if l2_tx.common_data.signature.is_empty() {
@@ -1019,13 +1021,29 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
 
         let call_tracer_result = Arc::new(OnceCell::default());
 
-        let custom_tracers =
-            vec![
-                Box::new(CallTracer::new(call_tracer_result.clone(), HistoryDisabled))
-                    as Box<dyn VmTracer<StorageView<&ForkStorage<S>>, HistoryDisabled>>,
-            ];
+        let batch_env = Arc::new(Mutex::new(batch_env));
+        let block_ctx = Arc::new(Mutex::new(block_ctx));
+        let cheatcode_node_context =
+            CheatcodeNodeContext::new(self.get_inner(), batch_env.clone(), block_ctx.clone());
+        let cheatcode_tracer = CheatcodeTracer::new(cheatcode_node_context);
+
+        let custom_tracers = vec![
+            Box::new(cheatcode_tracer)
+                as Box<dyn VmTracer<StorageView<&ForkStorage<S>>, HistoryDisabled>>,
+            Box::new(CallTracer::new(call_tracer_result.clone(), HistoryDisabled))
+                as Box<dyn VmTracer<StorageView<&ForkStorage<S>>, HistoryDisabled>>,
+        ];
+
+        // Drop inner to allow `CheatcodeTracer` to write to `InMemoryNode`
+        drop(inner);
 
         let tx_result = vm.inspect(custom_tracers, VmExecutionMode::OneTx);
+
+        // Re-acquire inner and context variables locks after `CheatcodeTracer` has finished
+        let inner = self
+            .inner
+            .write()
+            .map_err(|e| format!("Failed to acquire write lock: {}", e))?;
 
         let call_traces = Arc::try_unwrap(call_tracer_result)
             .unwrap()
@@ -1282,7 +1300,8 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
             .write()
             .map_err(|e| format!("Failed to acquire write lock: {}", e))?;
 
-        let storage = StorageView::new(&inner.fork_storage).to_rc_ptr();
+        let fork_storage = inner.fork_storage.clone();
+        let storage = StorageView::new(&fork_storage).to_rc_ptr();
 
         let (batch_env, block_ctx) = inner.create_l1_batch_env(storage.clone());
 
@@ -1320,7 +1339,15 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         let call_tracer_result = Arc::new(OnceCell::default());
         let bootloader_debug_result = Arc::new(OnceCell::default());
 
+        let batch_env = Arc::new(Mutex::new(batch_env));
+        let block_ctx = Arc::new(Mutex::new(block_ctx));
+        let cheatcode_node_context =
+            CheatcodeNodeContext::new(self.get_inner(), batch_env.clone(), block_ctx.clone());
+        let cheatcode_tracer = CheatcodeTracer::new(cheatcode_node_context);
+
         let custom_tracers = vec![
+            Box::new(cheatcode_tracer)
+                as Box<dyn VmTracer<StorageView<&ForkStorage<S>>, HistoryDisabled>>,
             Box::new(CallTracer::new(call_tracer_result.clone(), HistoryDisabled))
                 as Box<dyn VmTracer<StorageView<&ForkStorage<S>>, HistoryDisabled>>,
             Box::new(BootloaderDebugTracer {
@@ -1328,7 +1355,18 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
             }) as Box<dyn VmTracer<StorageView<&ForkStorage<S>>, HistoryDisabled>>,
         ];
 
+        // Drop inner to allow `CheatcodeTracer` to write to `InMemoryNode`
+        drop(inner);
+
         let tx_result = vm.inspect(custom_tracers, VmExecutionMode::OneTx);
+
+        // Re-acquire inner and context variables locks after `CheatcodeTracer` has finished
+        let batch_env = batch_env.lock().unwrap().clone();
+        let block_ctx = block_ctx.lock().unwrap().clone();
+        let inner = self
+            .inner
+            .write()
+            .map_err(|e| format!("Failed to acquire write lock: {}", e))?;
 
         let call_traces = call_tracer_result.get().unwrap();
 
@@ -1681,6 +1719,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
 
 /// Keeps track of a block's batch number, miniblock number and timestamp.
 /// Useful for keeping track of the current context when creating multiple blocks.
+#[derive(Debug, Clone)]
 pub struct BlockContext {
     pub batch: u32,
     pub miniblock: u64,
