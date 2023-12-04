@@ -2,7 +2,6 @@ use std::collections::HashSet;
 
 use colored::Colorize;
 use futures::FutureExt;
-use indexmap::IndexMap;
 use itertools::Itertools;
 use multivm::interface::{ExecutionResult, TxExecutionMode};
 use multivm::vm_latest::constants::ETH_CALL_GAS_LIMIT;
