@@ -1,11 +1,13 @@
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::pin::Pin;
 
 use chrono::{DateTime, Utc};
 use futures::Future;
-use vm::{ExecutionResult, VmExecutionResultAndLogs};
-use vm::{HistoryDisabled, Vm};
-use zksync_basic_types::{U256, U64};
+use multivm::interface::{ExecutionResult, VmExecutionResultAndLogs, VmInterface};
+use multivm::vm_latest::HistoryDisabled;
+use multivm::vm_refunds_enhancement::{utils::fee::derive_base_fee_and_gas_per_pubdata, Vm};
+use zksync_basic_types::{H256, U256, U64};
 use zksync_state::StorageView;
 use zksync_state::WriteStorage;
 use zksync_types::api::{BlockNumber, DebugCall, DebugCallType};
@@ -17,8 +19,6 @@ use zksync_web3_decl::error::Web3Error;
 
 use crate::node::create_empty_block;
 use crate::{fork::ForkSource, node::InMemoryNodeInner};
-use vm::utils::fee::derive_base_fee_and_gas_per_pubdata;
-
 use zksync_utils::{bytecode::hash_bytecode, bytes_to_be_words};
 
 pub(crate) trait IntoBoxedFuture: Sized + Send + 'static {
@@ -119,12 +119,14 @@ pub fn mine_empty_blocks<S: std::fmt::Debug + ForkSource>(
             }
 
             // init vm
-            let system_env =
-                node.create_system_env(bootloader_code.clone(), vm::TxExecutionMode::VerifyExecute);
+            let system_env = node.create_system_env(
+                bootloader_code.clone(),
+                multivm::interface::TxExecutionMode::VerifyExecute,
+            );
 
-            let mut vm = Vm::new(batch_env, system_env, storage.clone(), HistoryDisabled);
+            let mut vm: Vm<_, HistoryDisabled> = Vm::new(batch_env, system_env, storage.clone());
 
-            vm.execute(vm::VmExecutionMode::Bootloader);
+            vm.execute(multivm::interface::VmExecutionMode::Bootloader);
 
             let bytecodes: HashMap<U256, Vec<U256>> = vm
                 .get_last_tx_compressed_bytecodes()
@@ -153,7 +155,12 @@ pub fn mine_empty_blocks<S: std::fmt::Debug + ForkSource>(
             )
         }
 
-        let block = create_empty_block(block_ctx.miniblock, block_ctx.timestamp, block_ctx.batch);
+        let block = create_empty_block(
+            block_ctx.miniblock,
+            block_ctx.timestamp,
+            block_ctx.batch,
+            None,
+        );
 
         node.block_hashes.insert(block.number.as_u64(), block.hash);
         node.blocks.insert(block.hash, block);
@@ -452,4 +459,10 @@ mod tests {
             assert_eq!(U256::from(2002), tx_block_3.timestamp);
         }
     }
+}
+
+/// Converts `h256` value as BE into the u64
+pub fn h256_to_u64(value: H256) -> u64 {
+    let be_u64_bytes: [u8; 8] = value[24..].try_into().unwrap();
+    u64::from_be_bytes(be_u64_bytes)
 }

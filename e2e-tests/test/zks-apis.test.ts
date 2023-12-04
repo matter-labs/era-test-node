@@ -2,7 +2,7 @@ import { expect } from "chai";
 import { deployContract, getTestProvider } from "../helpers/utils";
 import { Wallet } from "zksync-web3";
 import { RichAccounts } from "../helpers/constants";
-import { ethers } from "ethers";
+import { BigNumber, ethers } from "ethers";
 import * as hre from "hardhat";
 import { TransactionRequest } from "zksync-web3/build/src/types";
 import { Deployer } from "@matterlabs/hardhat-zksync-deploy";
@@ -31,7 +31,7 @@ describe("zks_estimateFee", function () {
     const response: Fee = await provider.send("zks_estimateFee", [transaction]);
 
     // Assert
-    expect(ethers.BigNumber.from(response.gas_limit)).to.eql(ethers.BigNumber.from("1231992"), "Unexpected gas_limit");
+    expect(ethers.BigNumber.from(response.gas_limit)).to.eql(ethers.BigNumber.from("1230957"), "Unexpected gas_limit");
     expect(ethers.BigNumber.from(response.gas_per_pubdata_limit)).to.eql(
       ethers.BigNumber.from("4080"),
       "Unexpected gas_per_pubdata_limit"
@@ -150,5 +150,30 @@ describe("zks_getRawBlockTransactions", function () {
 
     expect(txns.length).to.equal(1);
     expect(txns[0]["execute"]["calldata"]).to.equal(receipt.data);
+  });
+});
+
+describe("zks_getConfirmedTokens", function () {
+  it("Should return only Ether", async function () {
+    const tokens = await provider.send("zks_getConfirmedTokens", [0, 100]);
+    expect(tokens.length).to.equal(1);
+    expect(tokens[0].name).to.equal("Ether");
+  });
+});
+
+describe("zks_getAllAccountBalances", function () {
+  it("Should return balance of a rich account", async function () {
+    // Arrange
+    const account = RichAccounts[0].Account;
+    const expectedBalance = ethers.utils.parseEther("1000000000000"); // 1_000_000_000_000 ETH
+    const ethAddress = "0x000000000000000000000000000000000000800a";
+    await provider.send("hardhat_setBalance", [account, expectedBalance._hex]);
+
+    // Act
+    const balances = await provider.send("zks_getAllAccountBalances", [account]);
+    const ethBalance = BigNumber.from(balances[ethAddress]);
+
+    // Assert
+    expect(ethBalance.eq(expectedBalance)).to.be.true;
   });
 });
