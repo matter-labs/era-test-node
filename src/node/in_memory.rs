@@ -31,7 +31,7 @@ use multivm::interface::{
 use multivm::{
     tracers::CallTracer,
     vm_latest::HistoryDisabled,
-    vm_refunds_enhancement::{
+    vm_latest::{
         constants::{BLOCK_GAS_LIMIT, BLOCK_OVERHEAD_PUBDATA, MAX_PUBDATA_PER_BLOCK},
         utils::{
             fee::derive_base_fee_and_gas_per_pubdata,
@@ -1284,7 +1284,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         mut tracers: Vec<
             TracerPointer<
                 StorageView<ForkStorage<S>>,
-                multivm::vm_refunds_enhancement::HistoryDisabled,
+                multivm::vm_latest::HistoryDisabled,
             >,
         >,
     ) -> Result<L2TxResult, String> {
