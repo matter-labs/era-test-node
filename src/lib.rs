@@ -55,5 +55,5 @@ pub mod resolver;
 pub mod system_contracts;
 pub mod utils;
 
-mod cache;
+pub mod cache;
 mod testing;
