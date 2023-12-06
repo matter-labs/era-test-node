@@ -148,6 +148,12 @@ impl<S: ForkSource> ForkStorage<S> {
             local_storage
         }
     }
+
+    /// Retrieves the enumeration index for a given `key`.
+    fn get_enumeration_index_internal(&self, _key: &StorageKey) -> Option<u64> {
+        // TODO: Update this file to use proper enumeration index value once it's exposed for forks via API
+        Some(0_u64)
+    }
 }
 
 impl<S: std::fmt::Debug + ForkSource> ReadStorage for ForkStorage<S> {
@@ -164,9 +170,8 @@ impl<S: std::fmt::Debug + ForkSource> ReadStorage for ForkStorage<S> {
         self.read_value_internal(key)
     }
 
-    fn get_enumeration_index(&mut self, _key: &StorageKey) -> Option<u64> {
-        // TODO:?
-        unimplemented!()
+    fn get_enumeration_index(&mut self, key: &StorageKey) -> Option<u64> {
+        self.get_enumeration_index_internal(key)
     }
 }
 
@@ -184,9 +189,8 @@ impl<S: std::fmt::Debug + ForkSource> ReadStorage for &ForkStorage<S> {
         self.load_factory_dep_internal(hash)
     }
 
-    fn get_enumeration_index(&mut self, _key: &StorageKey) -> Option<u64> {
-        // TODO:?
-        unimplemented!()
+    fn get_enumeration_index(&mut self, key: &StorageKey) -> Option<u64> {
+        self.get_enumeration_index_internal(key)
     }
 }
 
@@ -270,6 +274,13 @@ pub trait ForkSource {
 
     /// Returns addresses of the default bridge contracts.
     fn get_bridge_contracts(&self) -> eyre::Result<BridgeAddresses>;
+
+    /// Returns confirmed tokens
+    fn get_confirmed_tokens(
+        &self,
+        from: u32,
+        limit: u8,
+    ) -> eyre::Result<Vec<zksync_web3_decl::types::Token>>;
 }
 
 /// Holds the information about the original chain.
@@ -290,10 +301,15 @@ pub struct ForkDetails<S> {
 }
 
 const SUPPORTED_VERSIONS: &[ProtocolVersionId] = &[
+    ProtocolVersionId::Version9,
+    ProtocolVersionId::Version10,
+    ProtocolVersionId::Version11,
+    ProtocolVersionId::Version12,
     ProtocolVersionId::Version13,
     ProtocolVersionId::Version14,
     ProtocolVersionId::Version15,
     ProtocolVersionId::Version16,
+    ProtocolVersionId::Version17,
 ];
 
 pub fn supported_protocol_versions(version: ProtocolVersionId) -> bool {
@@ -382,9 +398,11 @@ impl ForkDetails<HttpForkSource> {
     pub async fn from_network_tx(fork: &str, tx: H256, cache_config: CacheConfig) -> Self {
         let (url, client) = Self::fork_to_url_and_client(fork);
         let tx_details = client.get_transaction_by_hash(tx).await.unwrap().unwrap();
-        let overwrite_chain_id = Some(L2ChainId::try_from(tx_details.chain_id).unwrap_or_else(
-            |err| panic!("erroneous chain id {}: {:?}", tx_details.chain_id, err,),
-        ));
+        let overwrite_chain_id = Some(
+            L2ChainId::try_from(tx_details.chain_id.as_u64()).unwrap_or_else(|err| {
+                panic!("erroneous chain id {}: {:?}", tx_details.chain_id, err,)
+            }),
+        );
         let miniblock_number = MiniblockNumber(tx_details.block_number.unwrap().as_u32());
         // We have to sync to the one-miniblock before the one where transaction is.
         let l2_miniblock = miniblock_number.saturating_sub(1) as u64;

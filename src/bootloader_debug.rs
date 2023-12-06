@@ -1,11 +1,11 @@
+use multivm::interface::{dyn_tracers::vm_1_4_0::DynTracer, tracer::VmExecutionStopReason};
 use std::sync::Arc;
 
-use once_cell::sync::OnceCell;
-use vm::{
-    constants::BOOTLOADER_HEAP_PAGE, BootloaderState, DynTracer, ExecutionEndTracer,
-    ExecutionProcessing, HistoryMode, SimpleMemory, VmExecutionResultAndLogs,
-    VmExecutionStopReason, VmTracer, ZkSyncVmState,
+use multivm::vm_latest::{
+    constants::BOOTLOADER_HEAP_PAGE, BootloaderState, HistoryMode, SimpleMemory, VmTracer,
+    ZkSyncVmState,
 };
+use once_cell::sync::OnceCell;
 use zksync_basic_types::U256;
 use zksync_state::WriteStorage;
 
@@ -82,11 +82,15 @@ pub struct BootloaderDebugTracer {
     pub result: Arc<OnceCell<eyre::Result<BootloaderDebug, String>>>,
 }
 
-impl<S, H: HistoryMode> DynTracer<S, H> for BootloaderDebugTracer {}
+impl<S, H: HistoryMode> DynTracer<S, SimpleMemory<H>> for BootloaderDebugTracer {}
 
-impl<H: HistoryMode> ExecutionEndTracer<H> for BootloaderDebugTracer {}
+fn load_debug_slot<H: HistoryMode>(memory: &SimpleMemory<H>, slot: usize) -> U256 {
+    memory
+        .read_slot(BOOTLOADER_HEAP_PAGE as usize, DEBUG_START_SLOT + slot)
+        .value
+}
 
-impl<S: WriteStorage, H: HistoryMode> ExecutionProcessing<S, H> for BootloaderDebugTracer {
+impl<S: WriteStorage, H: HistoryMode> VmTracer<S, H> for BootloaderDebugTracer {
     fn after_vm_execution(
         &mut self,
         state: &mut ZkSyncVmState<S, H>,
@@ -97,16 +101,6 @@ impl<S: WriteStorage, H: HistoryMode> ExecutionProcessing<S, H> for BootloaderDe
             .set(BootloaderDebug::load_from_memory(&state.memory))
             .unwrap();
     }
-}
-
-fn load_debug_slot<H: HistoryMode>(memory: &SimpleMemory<H>, slot: usize) -> U256 {
-    memory
-        .read_slot(BOOTLOADER_HEAP_PAGE as usize, DEBUG_START_SLOT + slot)
-        .value
-}
-
-impl<S: WriteStorage, H: HistoryMode> VmTracer<S, H> for BootloaderDebugTracer {
-    fn save_results(&mut self, _result: &mut VmExecutionResultAndLogs) {}
 }
 
 impl BootloaderDebug {

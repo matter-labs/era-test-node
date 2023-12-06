@@ -1,6 +1,6 @@
 [package]
 name = "era_test_node"
-version = "0.1.0-alpha.5"
+version = "0.1.0-alpha.12"
 edition = "2018"
 authors = ["The Matter Labs Team <hello@matterlabs.dev>"]
 homepage = "https://zksync.io/"
@@ -11,15 +11,15 @@ categories = ["cryptography"]
 publish = false # We don't want to publish our binaries.
 
 [dependencies]
-zksync_basic_types = { git = "https://github.com/matter-labs/zksync-era.git", rev = "5e7bc64b393ee529e0473b79569931c326118893" }
-zksync_core = { git = "https://github.com/matter-labs/zksync-era.git", rev = "5e7bc64b393ee529e0473b79569931c326118893" }
-vm = { git = "https://github.com/matter-labs/zksync-era.git", rev = "5e7bc64b393ee529e0473b79569931c326118893" }
-zksync_contracts = { git = "https://github.com/matter-labs/zksync-era.git", rev = "5e7bc64b393ee529e0473b79569931c326118893" }
-zksync_types = { git = "https://github.com/matter-labs/zksync-era.git", rev = "5e7bc64b393ee529e0473b79569931c326118893" }
-zksync_utils = { git = "https://github.com/matter-labs/zksync-era.git", rev = "5e7bc64b393ee529e0473b79569931c326118893" }
-zksync_state = { git = "https://github.com/matter-labs/zksync-era.git", rev = "5e7bc64b393ee529e0473b79569931c326118893" }
-zksync_web3_decl = { git = "https://github.com/matter-labs/zksync-era.git", rev = "5e7bc64b393ee529e0473b79569931c326118893" }
-
+zksync_basic_types = { git = "https://github.com/matter-labs/zksync-era.git", rev = "ec5907b70ff7d868a05b685a1641d96dc4fa9d69" }
+zksync_core = { git = "https://github.com/matter-labs/zksync-era.git", rev = "ec5907b70ff7d868a05b685a1641d96dc4fa9d69" }
+multivm = { git = "https://github.com/matter-labs/zksync-era.git", rev = "ec5907b70ff7d868a05b685a1641d96dc4fa9d69" }
+zksync_contracts = { git = "https://github.com/matter-labs/zksync-era.git", rev = "ec5907b70ff7d868a05b685a1641d96dc4fa9d69" }
+zksync_types = { git = "https://github.com/matter-labs/zksync-era.git", rev = "ec5907b70ff7d868a05b685a1641d96dc4fa9d69" }
+zksync_utils = { git = "https://github.com/matter-labs/zksync-era.git", rev = "ec5907b70ff7d868a05b685a1641d96dc4fa9d69" }
+zksync_state = { git = "https://github.com/matter-labs/zksync-era.git", rev = "ec5907b70ff7d868a05b685a1641d96dc4fa9d69" }
+zksync_web3_decl = { git = "https://github.com/matter-labs/zksync-era.git", rev = "ec5907b70ff7d868a05b685a1641d96dc4fa9d69" }
+sha3 = "0.10.6"
 
 
 openssl-sys = { version = "0.9", features = ["vendored"] }
@@ -38,7 +38,7 @@ clap = { version = "4.2.4", features = ["derive"] }
 reqwest = { version = "0.11", features = ["blocking"] }
 serde = { version = "1.0", features = ["derive"] }
 tracing = { version = "0.1.26", features = ["log"] }
-tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter", "time", "json"] }
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter", "time", "json", "local-time"] }
 colored = "2.0"
 lazy_static = "1.4"
 eyre = "0.6"
@@ -50,6 +50,7 @@ itertools = "0.10.5"
 rustc-hash = "1.1.0"
 indexmap = "2.0.1"
 chrono = { version = "0.4.31", default-features = false }
+time = "0.3.30"
 
 [dev-dependencies]
 httptest = "0.15.4"
@@ -57,3 +58,6 @@ tempdir = "0.3.7"
 maplit = "1.0.2"
 zksync-web3-rs = "0.1.1"
 ethers = { version = "2.0.4", features = ["rustls"] }
+
+[patch.crates-io]
+sha3 = { git = "https://github.com/RustCrypto/hashes", tag = "sha3-v0.10.6" }

@@ -1,21 +1,21 @@
-use std::sync::{Arc, RwLock};
+use std::collections::HashMap;
 
 use bigdecimal::BigDecimal;
+use colored::Colorize;
 use futures::FutureExt;
-use zksync_basic_types::{Address, L1BatchNumber, MiniblockNumber, U256};
-use zksync_core::api_server::web3::backend_jsonrpc::{
-    error::{internal_error, into_jsrpc_error},
-    namespaces::zks::ZksNamespaceT,
-};
+use zksync_basic_types::{AccountTreeId, Address, L1BatchNumber, MiniblockNumber, H256, U256};
+use zksync_core::api_server::web3::backend_jsonrpc::error::{internal_error, into_jsrpc_error};
 use zksync_state::ReadStorage;
 use zksync_types::{
     api::{
-        BlockDetails, BlockDetailsBase, BlockStatus, BridgeAddresses, ProtocolVersion,
+        BlockDetails, BlockDetailsBase, BlockStatus, BridgeAddresses, Proof, ProtocolVersion,
         TransactionDetails, TransactionStatus, TransactionVariant,
     },
     fee::Fee,
-    ExecuteTransactionCommon, ProtocolVersionId, Transaction,
+    utils::storage_key_for_standard_token_balance,
+    ExecuteTransactionCommon, ProtocolVersionId, Transaction, L2_ETH_TOKEN_ADDRESS,
 };
+use zksync_utils::h256_to_u256;
 use zksync_web3_decl::{
     error::Web3Error,
     types::{Filter, Log},
@@ -23,25 +23,13 @@ use zksync_web3_decl::{
 
 use crate::{
     fork::ForkSource,
-    node::{InMemoryNodeInner, TransactionResult, L2_GAS_PRICE},
+    namespaces::{RpcResult, ZksNamespaceT},
+    node::{InMemoryNode, TransactionResult, L2_GAS_PRICE},
     utils::{not_implemented, utc_datetime_from_epoch_ms, IntoBoxedFuture},
 };
-use colored::Colorize;
 
-/// Mock implementation of ZksNamespace - used only in the test node.
-pub struct ZkMockNamespaceImpl<S> {
-    node: Arc<RwLock<InMemoryNodeInner<S>>>,
-}
-
-impl<S> ZkMockNamespaceImpl<S> {
-    /// Creates a new `Zks` instance with the given `node`.
-    pub fn new(node: Arc<RwLock<InMemoryNodeInner<S>>>) -> Self {
-        Self { node }
-    }
-}
-
-impl<S: Send + Sync + 'static + ForkSource + std::fmt::Debug> ZksNamespaceT
-    for ZkMockNamespaceImpl<S>
+impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> ZksNamespaceT
+    for InMemoryNode<S>
 {
     /// Estimates the gas fee data required for a given call request.
     ///
@@ -52,22 +40,15 @@ impl<S: Send + Sync + 'static + ForkSource + std::fmt::Debug> ZksNamespaceT
     /// # Returns
     ///
     /// A `BoxFuture` containing a `Result` with a `Fee` representing the estimated gas data required.
-    fn estimate_fee(
-        &self,
-        req: zksync_types::transaction_request::CallRequest,
-    ) -> jsonrpc_core::BoxFuture<jsonrpc_core::Result<zksync_types::fee::Fee>> {
-        let reader = match self.node.read() {
-            Ok(r) => r,
-            Err(_) => {
-                return futures::future::err(into_jsrpc_error(Web3Error::InternalError)).boxed()
-            }
-        };
-
-        let result: jsonrpc_core::Result<Fee> = reader.estimate_gas_impl(req);
-        match result {
-            Ok(fee) => Ok(fee).into_boxed_future(),
-            Err(err) => return futures::future::err(err).boxed(),
-        }
+    fn estimate_fee(&self, req: zksync_types::transaction_request::CallRequest) -> RpcResult<Fee> {
+        self.get_inner()
+            .read()
+            .map_err(|err| {
+                tracing::error!("failed acquiring lock: {:?}", err);
+                into_jsrpc_error(Web3Error::InternalError)
+            })
+            .and_then(|reader| reader.estimate_gas_impl(req))
+            .into_boxed_future()
     }
 
     /// Returns data of transactions in a block.
@@ -82,8 +63,8 @@ impl<S: Send + Sync + 'static + ForkSource + std::fmt::Debug> ZksNamespaceT
     fn get_raw_block_transactions(
         &self,
         block_number: MiniblockNumber,
-    ) -> jsonrpc_core::BoxFuture<jsonrpc_core::Result<Vec<zksync_types::Transaction>>> {
-        let inner = self.node.clone();
+    ) -> RpcResult<Vec<zksync_types::Transaction>> {
+        let inner = self.get_inner().clone();
         Box::pin(async move {
             let reader = inner
                 .read()
@@ -140,29 +121,32 @@ impl<S: Send + Sync + 'static + ForkSource + std::fmt::Debug> ZksNamespaceT
         })
     }
 
+    fn get_proof(
+        &self,
+        _address: Address,
+        _keys: Vec<H256>,
+        _l1_batch_number: L1BatchNumber,
+    ) -> RpcResult<Proof> {
+        not_implemented("zks_getProof")
+    }
+
     fn estimate_gas_l1_to_l2(
         &self,
         _req: zksync_types::transaction_request::CallRequest,
-    ) -> jsonrpc_core::BoxFuture<jsonrpc_core::Result<U256>> {
+    ) -> RpcResult<U256> {
         not_implemented("zks_estimateGasL1ToL2")
     }
 
-    fn get_main_contract(
-        &self,
-    ) -> jsonrpc_core::BoxFuture<jsonrpc_core::Result<zksync_basic_types::Address>> {
+    fn get_main_contract(&self) -> RpcResult<zksync_basic_types::Address> {
         not_implemented("zks_getMainContract")
     }
 
-    fn get_testnet_paymaster(
-        &self,
-    ) -> jsonrpc_core::BoxFuture<jsonrpc_core::Result<Option<zksync_basic_types::Address>>> {
+    fn get_testnet_paymaster(&self) -> RpcResult<Option<zksync_basic_types::Address>> {
         not_implemented("zks_getTestnetPaymaster")
     }
 
-    fn get_bridge_contracts(
-        &self,
-    ) -> jsonrpc_core::BoxFuture<jsonrpc_core::Result<BridgeAddresses>> {
-        let inner = self.node.clone();
+    fn get_bridge_contracts(&self) -> RpcResult<BridgeAddresses> {
+        let inner = self.get_inner().clone();
         Box::pin(async move {
             let reader = inner
                 .read()
@@ -192,24 +176,44 @@ impl<S: Send + Sync + 'static + ForkSource + std::fmt::Debug> ZksNamespaceT
         })
     }
 
-    fn l1_chain_id(
-        &self,
-    ) -> jsonrpc_core::BoxFuture<jsonrpc_core::Result<zksync_basic_types::U64>> {
+    fn l1_chain_id(&self) -> RpcResult<zksync_basic_types::U64> {
         not_implemented("zks_L1ChainId")
     }
 
     fn get_confirmed_tokens(
         &self,
-        _from: u32,
-        _limit: u8,
+        from: u32,
+        limit: u8,
     ) -> jsonrpc_core::BoxFuture<jsonrpc_core::Result<Vec<zksync_web3_decl::types::Token>>> {
-        not_implemented("zks_getConfirmedTokens")
+        let inner = self.get_inner().clone();
+        Box::pin(async move {
+            let reader = inner
+                .read()
+                .map_err(|_| into_jsrpc_error(Web3Error::InternalError))?;
+
+            let fork_storage_read = reader
+                .fork_storage
+                .inner
+                .read()
+                .expect("failed reading fork storage");
+
+            match fork_storage_read.fork.as_ref() {
+                Some(fork) => Ok(fork
+                    .fork_source
+                    .get_confirmed_tokens(from, limit)
+                    .map_err(|_e| into_jsrpc_error(Web3Error::InternalError))?),
+                None => Ok(vec![zksync_web3_decl::types::Token {
+                    l1_address: Address::zero(),
+                    l2_address: L2_ETH_TOKEN_ADDRESS,
+                    name: "Ether".to_string(),
+                    symbol: "ETH".to_string(),
+                    decimals: 18,
+                }]),
+            }
+        })
     }
 
-    fn get_token_price(
-        &self,
-        token_address: zksync_basic_types::Address,
-    ) -> jsonrpc_core::BoxFuture<jsonrpc_core::Result<BigDecimal>> {
+    fn get_token_price(&self, token_address: zksync_basic_types::Address) -> RpcResult<BigDecimal> {
         match format!("{:?}", token_address).to_lowercase().as_str() {
             "0x0000000000000000000000000000000000000000" => {
                 // ETH
@@ -241,13 +245,48 @@ impl<S: Send + Sync + 'static + ForkSource + std::fmt::Debug> ZksNamespaceT
         }
     }
 
+    /// Get all known balances for a given account.
+    ///
+    /// # Arguments
+    ///
+    /// * `address` - The user address with balances to check.
+    ///
+    /// # Returns
+    ///
+    /// A `BoxFuture` containing a `Result` with a (Token, Balance) map where account has non-zero value.
     fn get_all_account_balances(
         &self,
-        _address: zksync_basic_types::Address,
+        address: zksync_basic_types::Address,
     ) -> jsonrpc_core::BoxFuture<
         jsonrpc_core::Result<std::collections::HashMap<zksync_basic_types::Address, U256>>,
     > {
-        not_implemented("zks_getAllAccountBalances")
+        let inner = self.get_inner().clone();
+        Box::pin({
+            self.get_confirmed_tokens(0, 100)
+                .then(move |tokens| async move {
+                    let tokens =
+                        tokens.map_err(|_err| into_jsrpc_error(Web3Error::InternalError))?;
+
+                    let mut writer = inner
+                        .write()
+                        .map_err(|_err| into_jsrpc_error(Web3Error::InternalError))?;
+
+                    let mut balances = HashMap::new();
+                    for token in tokens {
+                        let balance_key = storage_key_for_standard_token_balance(
+                            AccountTreeId::new(token.l2_address),
+                            &address,
+                        );
+
+                        let balance = writer.fork_storage.read_value(&balance_key);
+                        if !balance.is_zero() {
+                            balances.insert(token.l2_address, h256_to_u256(balance));
+                        }
+                    }
+
+                    Ok(balances)
+                })
+        })
     }
 
     fn get_l2_to_l1_msg_proof(
@@ -256,8 +295,7 @@ impl<S: Send + Sync + 'static + ForkSource + std::fmt::Debug> ZksNamespaceT
         _sender: zksync_basic_types::Address,
         _msg: zksync_basic_types::H256,
         _l2_log_position: Option<usize>,
-    ) -> jsonrpc_core::BoxFuture<jsonrpc_core::Result<Option<zksync_types::api::L2ToL1LogProof>>>
-    {
+    ) -> RpcResult<Option<zksync_types::api::L2ToL1LogProof>> {
         not_implemented("zks_getL2ToL1MsgProof")
     }
 
@@ -265,14 +303,11 @@ impl<S: Send + Sync + 'static + ForkSource + std::fmt::Debug> ZksNamespaceT
         &self,
         _tx_hash: zksync_basic_types::H256,
         _index: Option<usize>,
-    ) -> jsonrpc_core::BoxFuture<jsonrpc_core::Result<Option<zksync_types::api::L2ToL1LogProof>>>
-    {
+    ) -> RpcResult<Option<zksync_types::api::L2ToL1LogProof>> {
         not_implemented("zks_getL2ToL1LogProof")
     }
 
-    fn get_l1_batch_number(
-        &self,
-    ) -> jsonrpc_core::BoxFuture<jsonrpc_core::Result<zksync_basic_types::U64>> {
+    fn get_l1_batch_number(&self) -> RpcResult<zksync_basic_types::U64> {
         not_implemented("zks_L1BatchNumber")
     }
 
@@ -288,9 +323,8 @@ impl<S: Send + Sync + 'static + ForkSource + std::fmt::Debug> ZksNamespaceT
     fn get_block_details(
         &self,
         block_number: zksync_basic_types::MiniblockNumber,
-    ) -> jsonrpc_core::BoxFuture<jsonrpc_core::Result<Option<zksync_types::api::BlockDetails>>>
-    {
-        let inner = self.node.clone();
+    ) -> RpcResult<Option<zksync_types::api::BlockDetails>> {
+        let inner = self.get_inner().clone();
         Box::pin(async move {
             let reader = inner
                 .read()
@@ -368,9 +402,8 @@ impl<S: Send + Sync + 'static + ForkSource + std::fmt::Debug> ZksNamespaceT
     fn get_transaction_details(
         &self,
         hash: zksync_basic_types::H256,
-    ) -> jsonrpc_core::BoxFuture<jsonrpc_core::Result<Option<zksync_types::api::TransactionDetails>>>
-    {
-        let inner = self.node.clone();
+    ) -> RpcResult<Option<zksync_types::api::TransactionDetails>> {
+        let inner = self.get_inner().clone();
         Box::pin(async move {
             let reader = inner
                 .read()
@@ -433,8 +466,7 @@ impl<S: Send + Sync + 'static + ForkSource + std::fmt::Debug> ZksNamespaceT
     fn get_l1_batch_details(
         &self,
         _batch: zksync_basic_types::L1BatchNumber,
-    ) -> jsonrpc_core::BoxFuture<jsonrpc_core::Result<Option<zksync_types::api::L1BatchDetails>>>
-    {
+    ) -> RpcResult<Option<zksync_types::api::L1BatchDetails>> {
         Box::pin(async { Ok(None) })
     }
 
@@ -447,11 +479,8 @@ impl<S: Send + Sync + 'static + ForkSource + std::fmt::Debug> ZksNamespaceT
     /// # Returns
     ///
     /// A boxed future resolving to a `jsonrpc_core::Result` containing an `Option` of bytes.
-    fn get_bytecode_by_hash(
-        &self,
-        hash: zksync_basic_types::H256,
-    ) -> jsonrpc_core::BoxFuture<jsonrpc_core::Result<Option<Vec<u8>>>> {
-        let inner = self.node.clone();
+    fn get_bytecode_by_hash(&self, hash: zksync_basic_types::H256) -> RpcResult<Option<Vec<u8>>> {
+        let inner = self.get_inner().clone();
         Box::pin(async move {
             let mut writer = inner
                 .write()
@@ -472,23 +501,15 @@ impl<S: Send + Sync + 'static + ForkSource + std::fmt::Debug> ZksNamespaceT
         })
     }
 
-    fn get_l1_gas_price(
-        &self,
-    ) -> jsonrpc_core::BoxFuture<jsonrpc_core::Result<zksync_basic_types::U64>> {
+    fn get_l1_gas_price(&self) -> RpcResult<zksync_basic_types::U64> {
         not_implemented("zks_getL1GasPrice")
     }
 
-    fn get_protocol_version(
-        &self,
-        _version_id: Option<u16>,
-    ) -> jsonrpc_core::BoxFuture<jsonrpc_core::Result<Option<ProtocolVersion>>> {
+    fn get_protocol_version(&self, _version_id: Option<u16>) -> RpcResult<Option<ProtocolVersion>> {
         not_implemented("zks_getProtocolVersion")
     }
 
-    fn get_logs_with_virtual_blocks(
-        &self,
-        _filter: Filter,
-    ) -> jsonrpc_core::BoxFuture<jsonrpc_core::Result<Vec<Log>>> {
+    fn get_logs_with_virtual_blocks(&self, _filter: Filter) -> RpcResult<Vec<Log>> {
         not_implemented("zks_getLogs")
     }
 }
@@ -507,11 +528,11 @@ mod tests {
     use zksync_basic_types::{Address, H160, H256};
     use zksync_types::api::{self, Block, TransactionReceipt, TransactionVariant};
     use zksync_types::transaction_request::CallRequest;
+    use zksync_utils::u256_to_h256;
 
     #[tokio::test]
     async fn test_estimate_fee() {
         let node = InMemoryNode::<HttpForkSource>::default();
-        let namespace = ZkMockNamespaceImpl::new(node.get_inner());
 
         let mock_request = CallRequest {
             from: Some(
@@ -536,9 +557,9 @@ mod tests {
             eip712_meta: None,
         };
 
-        let result = namespace.estimate_fee(mock_request).await.unwrap();
+        let result = node.estimate_fee(mock_request).await.unwrap();
 
-        assert_eq!(result.gas_limit, U256::from(731457));
+        assert_eq!(result.gas_limit, U256::from(746532));
         assert_eq!(result.max_fee_per_gas, U256::from(250000000));
         assert_eq!(result.max_priority_fee_per_gas, U256::from(0));
         assert_eq!(result.gas_per_pubdata_limit, U256::from(4080));
@@ -548,13 +569,12 @@ mod tests {
     async fn test_get_token_price_given_eth_should_return_price() {
         // Arrange
         let node = InMemoryNode::<HttpForkSource>::default();
-        let namespace = ZkMockNamespaceImpl::new(node.get_inner());
 
         let mock_address = Address::from_str("0x0000000000000000000000000000000000000000")
             .expect("Failed to parse address");
 
         // Act
-        let result = namespace.get_token_price(mock_address).await.unwrap();
+        let result = node.get_token_price(mock_address).await.unwrap();
 
         // Assert
         assert_eq!(result, BigDecimal::from(1_500));
@@ -564,13 +584,12 @@ mod tests {
     async fn test_get_token_price_given_capitalized_link_address_should_return_price() {
         // Arrange
         let node = InMemoryNode::<HttpForkSource>::default();
-        let namespace = ZkMockNamespaceImpl::new(node.get_inner());
 
         let mock_address = Address::from_str("0x40609141Db628BeEE3BfAB8034Fc2D8278D0Cc78")
             .expect("Failed to parse address");
 
         // Act
-        let result = namespace.get_token_price(mock_address).await.unwrap();
+        let result = node.get_token_price(mock_address).await.unwrap();
 
         // Assert
         assert_eq!(result, BigDecimal::from(1));
@@ -580,13 +599,12 @@ mod tests {
     async fn test_get_token_price_given_unknown_address_should_return_error() {
         // Arrange
         let node = InMemoryNode::<HttpForkSource>::default();
-        let namespace = ZkMockNamespaceImpl::new(node.get_inner());
 
         let mock_address = Address::from_str("0x0000000000000000000000000000000000000042")
             .expect("Failed to parse address");
 
         // Act
-        let result = namespace.get_token_price(mock_address).await;
+        let result = node.get_token_price(mock_address).await;
 
         // Assert
         assert!(result.is_err());
@@ -596,7 +614,6 @@ mod tests {
     async fn test_get_transaction_details_local() {
         // Arrange
         let node = InMemoryNode::<HttpForkSource>::default();
-        let namespace = ZkMockNamespaceImpl::new(node.get_inner());
         let inner = node.get_inner();
         {
             let mut writer = inner.write().unwrap();
@@ -614,8 +631,7 @@ mod tests {
                 },
             );
         }
-        // Act
-        let result = namespace
+        let result = node
             .get_transaction_details(H256::repeat_byte(0x1))
             .await
             .expect("get transaction details")
@@ -666,8 +682,7 @@ mod tests {
             Default::default(),
         );
 
-        let namespace = ZkMockNamespaceImpl::new(node.get_inner());
-        let result = namespace
+        let result = node
             .get_transaction_details(input_tx_hash)
             .await
             .expect("get transaction details")
@@ -681,7 +696,6 @@ mod tests {
     async fn test_get_block_details_local() {
         // Arrange
         let node = InMemoryNode::<HttpForkSource>::default();
-        let namespace = ZkMockNamespaceImpl::new(node.get_inner());
         let inner = node.get_inner();
         {
             let mut writer = inner.write().unwrap();
@@ -689,8 +703,7 @@ mod tests {
             writer.blocks.insert(H256::repeat_byte(0x1), block);
             writer.block_hashes.insert(0, H256::repeat_byte(0x1));
         }
-        // Act
-        let result = namespace
+        let result = node
             .get_block_details(MiniblockNumber(0))
             .await
             .expect("get block details")
@@ -754,8 +767,7 @@ mod tests {
             Default::default(),
         );
 
-        let namespace = ZkMockNamespaceImpl::new(node.get_inner());
-        let result = namespace
+        let result = node
             .get_block_details(miniblock)
             .await
             .expect("get block details")
@@ -770,7 +782,6 @@ mod tests {
     async fn test_get_bridge_contracts_uses_default_values_if_local() {
         // Arrange
         let node = InMemoryNode::<HttpForkSource>::default();
-        let namespace = ZkMockNamespaceImpl::new(node.get_inner());
         let expected_bridge_addresses = BridgeAddresses {
             l1_erc20_default_bridge: Default::default(),
             l2_erc20_default_bridge: Default::default(),
@@ -778,8 +789,7 @@ mod tests {
             l2_weth_bridge: Default::default(),
         };
 
-        // Act
-        let actual_bridge_addresses = namespace
+        let actual_bridge_addresses = node
             .get_bridge_contracts()
             .await
             .expect("get bridge addresses");
@@ -813,8 +823,8 @@ mod tests {
                 "result": {
                     "l1Erc20DefaultBridge": format!("{:#x}", input_bridge_addresses.l1_erc20_default_bridge),
                     "l2Erc20DefaultBridge": format!("{:#x}", input_bridge_addresses.l2_erc20_default_bridge),
-                    "l1WethBridge": format!("{:#x}", input_bridge_addresses.l1_weth_bridge.clone().unwrap()),
-                    "l2WethBridge": format!("{:#x}", input_bridge_addresses.l2_weth_bridge.clone().unwrap())
+                    "l1WethBridge": format!("{:#x}", input_bridge_addresses.l1_weth_bridge.unwrap()),
+                    "l2WethBridge": format!("{:#x}", input_bridge_addresses.l2_weth_bridge.unwrap())
                 },
                 "id": 0
             }),
@@ -825,10 +835,8 @@ mod tests {
             None,
             Default::default(),
         );
-        let namespace = ZkMockNamespaceImpl::new(node.get_inner());
 
-        // Act
-        let actual_bridge_addresses = namespace
+        let actual_bridge_addresses = node
             .get_bridge_contracts()
             .await
             .expect("get bridge addresses");
@@ -841,7 +849,6 @@ mod tests {
     async fn test_get_bytecode_by_hash_returns_local_value_if_available() {
         // Arrange
         let node = InMemoryNode::<HttpForkSource>::default();
-        let namespace = ZkMockNamespaceImpl::new(node.get_inner());
         let input_hash = H256::repeat_byte(0x1);
         let input_bytecode = vec![0x1];
         node.get_inner()
@@ -850,8 +857,7 @@ mod tests {
             .fork_storage
             .store_factory_dep(input_hash, input_bytecode.clone());
 
-        // Act
-        let actual = namespace
+        let actual = node
             .get_bytecode_by_hash(input_hash)
             .await
             .expect("failed fetching bytecode")
@@ -892,10 +898,8 @@ mod tests {
             None,
             Default::default(),
         );
-        let namespace = ZkMockNamespaceImpl::new(node.get_inner());
 
-        // Act
-        let actual = namespace
+        let actual = node
             .get_bytecode_by_hash(input_hash)
             .await
             .expect("failed fetching bytecode")
@@ -909,7 +913,6 @@ mod tests {
     async fn test_get_raw_block_transactions_local() {
         // Arrange
         let node = InMemoryNode::<HttpForkSource>::default();
-        let namespace = ZkMockNamespaceImpl::new(node.get_inner());
         let inner = node.get_inner();
         {
             let mut writer = inner.write().unwrap();
@@ -933,8 +936,7 @@ mod tests {
             writer.block_hashes.insert(0, H256::repeat_byte(0x1));
         }
 
-        // Act
-        let txns = namespace
+        let txns = node
             .get_raw_block_transactions(MiniblockNumber(0))
             .await
             .expect("get transaction details");
@@ -1018,11 +1020,156 @@ mod tests {
             Default::default(),
         );
 
-        let namespace = ZkMockNamespaceImpl::new(node.get_inner());
-        let txns = namespace
+        let txns = node
             .get_raw_block_transactions(miniblock)
             .await
             .expect("get transaction details");
         assert_eq!(txns.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_get_all_account_balances_empty() {
+        let node = InMemoryNode::<HttpForkSource>::default();
+        let balances = node
+            .get_all_account_balances(Address::zero())
+            .await
+            .expect("get balances");
+        assert!(balances.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_confirmed_tokens_eth() {
+        let node = InMemoryNode::<HttpForkSource>::default();
+        let balances = node
+            .get_confirmed_tokens(0, 100)
+            .await
+            .expect("get balances");
+        assert_eq!(balances.len(), 1);
+        assert_eq!(&balances[0].name, "Ether");
+    }
+
+    #[tokio::test]
+    async fn test_get_all_account_balances_forked() {
+        let cbeth_address = Address::from_str("0x75af292c1c9a37b3ea2e6041168b4e48875b9ed5")
+            .expect("failed to parse address");
+        let mock_server = testing::MockServer::run();
+        mock_server.expect(
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 0,
+                "method": "zks_getBlockDetails",
+                "params": [1]
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "result": {
+                    "baseSystemContractsHashes": {
+                        "bootloader": "0x010008a5c30072f79f8e04f90b31f34e554279957e7e2bf85d3e9c7c1e0f834d",
+                        "default_aa": "0x01000663d7941c097ba2631096508cf9ec7769ddd40e081fd81b0d04dc07ea0e"
+                    },
+                    "commitTxHash": null,
+                    "committedAt": null,
+                    "executeTxHash": null,
+                    "executedAt": null,
+                    "l1BatchNumber": 0,
+                    "l1GasPrice": 0,
+                    "l1TxCount": 1,
+                    "l2FairGasPrice": 250000000,
+                    "l2TxCount": 0,
+                    "number": 0,
+                    "operatorAddress": "0x0000000000000000000000000000000000000000",
+                    "protocolVersion": "Version16",
+                    "proveTxHash": null,
+                    "provenAt": null,
+                    "rootHash": "0xdaa77426c30c02a43d9fba4e841a6556c524d47030762eb14dc4af897e605d9b",
+                    "status": "verified",
+                    "timestamp": 1000
+                },
+                "id": 0
+            }),
+        );
+        mock_server.expect(
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "eth_getBlockByHash",
+                "params": ["0xdaa77426c30c02a43d9fba4e841a6556c524d47030762eb14dc4af897e605d9b", true]
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "result": {
+                    "baseFeePerGas": "0x0",
+                    "difficulty": "0x0",
+                    "extraData": "0x",
+                    "gasLimit": "0xffffffff",
+                    "gasUsed": "0x0",
+                    "hash": "0xdaa77426c30c02a43d9fba4e841a6556c524d47030762eb14dc4af897e605d9b",
+                    "l1BatchNumber": "0x0",
+                    "l1BatchTimestamp": null,
+                    "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+                    "miner": "0x0000000000000000000000000000000000000000",
+                    "mixHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+                    "nonce": "0x0000000000000000",
+                    "number": "0x0",
+                    "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+                    "receiptsRoot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+                    "sealFields": [],
+                    "sha3Uncles": "0x0000000000000000000000000000000000000000000000000000000000000000",
+                    "size": "0x0",
+                    "stateRoot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+                    "timestamp": "0x3e8",
+                    "totalDifficulty": "0x0",
+                    "transactions": [],
+                    "transactionsRoot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+                    "uncles": []
+                },
+                "id": 1
+            }),
+        );
+        mock_server.expect(
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 0,
+                "method": "zks_getConfirmedTokens",
+                "params": [0, 100]
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "result": [
+                    {
+                        "decimals": 18,
+                        "l1Address": "0xbe9895146f7af43049ca1c1ae358b0541ea49704",
+                        "l2Address": "0x75af292c1c9a37b3ea2e6041168b4e48875b9ed5",
+                        "name": "Coinbase Wrapped Staked ETH",
+                        "symbol": "cbETH"
+                      }
+                ],
+                "id": 0
+            }),
+        );
+
+        let node = InMemoryNode::<HttpForkSource>::new(
+            Some(ForkDetails::from_network(&mock_server.url(), Some(1), CacheConfig::None).await),
+            None,
+            Default::default(),
+        );
+        {
+            let inner = node.get_inner();
+            let writer = inner.write().unwrap();
+            let mut fork = writer.fork_storage.inner.write().unwrap();
+            fork.raw_storage.set_value(
+                storage_key_for_standard_token_balance(
+                    AccountTreeId::new(cbeth_address),
+                    &Address::repeat_byte(0x1),
+                ),
+                u256_to_h256(U256::from(1337)),
+            );
+        }
+
+        let balances = node
+            .get_all_account_balances(Address::repeat_byte(0x1))
+            .await
+            .expect("get balances");
+        assert_eq!(balances.get(&cbeth_address).unwrap(), &U256::from(1337));
     }
 }
