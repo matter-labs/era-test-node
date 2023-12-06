@@ -464,10 +464,6 @@ object "Bootloader" {
                 ret := 0x0000000000000000000000000000000000008001
             }
 
-            function MAX_SYSTEM_CONTRACT_ADDR() -> ret {
-                ret := 0x000000000000000000000000000000000000ffff
-            }
-
             function ACCOUNT_CODE_STORAGE_ADDR() -> ret {
                 ret := 0x0000000000000000000000000000000000008002
             }
@@ -486,6 +482,10 @@ object "Bootloader" {
 
             function FORCE_DEPLOYER() -> ret {
                 ret := 0x0000000000000000000000000000000000008007
+            }
+
+            function L1_MESSENGER_ADDR() -> ret {
+                ret := 0x0000000000000000000000000000000000008008
             }
 
             function MSG_VALUE_SIMULATOR_ADDR() -> ret {
@@ -508,8 +508,12 @@ object "Bootloader" {
                 ret := 0x000000000000000000000000000000000000800e
             }
 
-            function L1_MESSENGER_ADDR() -> ret {
-                ret := 0x0000000000000000000000000000000000008008
+            function KECCAK256_ADDR() -> ret {
+                ret := 0x0000000000000000000000000000000000008010
+            }
+
+            function MAX_SYSTEM_CONTRACT_ADDR() -> ret {
+                ret := 0x000000000000000000000000000000000000ffff
             }
 
             /// @dev The minimal allowed distance in bytes between the pointer to the compressed data
@@ -654,17 +658,21 @@ object "Bootloader" {
                     }
             }
 
-            /// @dev Checks whether the code hash of the system context contract is correct and updates it if needed.
-            /// @dev The L1 contracts expect all the system logs to be present in the first boojum upgrade batch already.
-            /// However, the old system context did not send the same system logs. Usually we upgrade system context
-            /// via an upgrade transaction, but in this case the transaction won't be even processed, because of failure to create an L2 block.
-            function upgradeSystemContextIfNeeded() {
-                let expectedCodeHash := {{SYSTEM_CONTEXT_EXPECTED_CODE_HASH}}
+            /// @dev The function that is temporarily needed to upgrade the Keccak256 precompile. This function and `ContractDeployer:forceDeployKeccak256`
+            /// are to be removed once the upgrade is complete.
+            /// @dev Checks whether the code hash of the Keccak256 precompile contract is correct and updates it if needed.
+            /// @dev When we upgrade to the new version of the Keccak256 precompile contract, the keccak precompile will not work correctly
+            /// and so the upgrade it should be done before any `keccak` calls.
+            function upgradeKeccakIfNeeded() {
+                let expectedCodeHash := {{KECCAK256_EXPECTED_CODE_HASH}}
 
-                let actualCodeHash := extcodehash(SYSTEM_CONTEXT_ADDR())
+                let actualCodeHash := getRawCodeHash(KECCAK256_ADDR(), true)
                 if iszero(eq(expectedCodeHash, actualCodeHash)) {
-                    // Preparing the calldata to upgrade the SystemContext contract
-                    {{UPGRADE_SYSTEM_CONTEXT_CALLDATA}}
+                    // The `mimicCallOnlyResult` requires that the first word of the data
+                    // contains its length. Here is 36 bytes, i.e. 4 byte selector + 32 byte hash.
+                    mstore(0, 36)
+                    mstore(32, {{PADDED_FORCE_DEPLOY_KECCAK256_SELECTOR}})
+                    mstore(36, expectedCodeHash)
 
                     // We'll use a mimicCall to simulate the correct sender.
                     let success := mimicCallOnlyResult(
@@ -679,9 +687,39 @@ object "Bootloader" {
                     )
 
                     if iszero(success) {
-                        assertionError("system context upgrade fail")
+                        assertionError("keccak256 upgrade fail")
                     }
                 }
+            }
+
+            function getRawCodeHash(addr, assertSuccess) -> ret {
+                mstore(0, {{RIGHT_PADDED_GET_RAW_CODE_HASH_SELECTOR}})
+                mstore(4, addr)
+                let success := staticcall(
+                    gas(),
+                    ACCOUNT_CODE_STORAGE_ADDR(),
+                    0,
+                    36,
+                    0,
+                    32
+                )
+
+                // In case the call to the account code storage fails,
+                // it most likely means that the caller did not provide enough gas for
+                // the call.
+                // In case the caller is certain that the amount of gas provided is enough, i.e.
+                // (`assertSuccess` = true), then we should panic.
+                if iszero(success) {
+                    if assertSuccess {
+                        // The call must've succeeded, but it didn't. So we revert the bootloader.
+                        assertionError("getRawCodeHash failed")
+                    }
+
+                    // Most likely not enough gas provided, revert the current frame.
+                    nearCallPanic()
+                }
+
+                ret := mload(0)
             }
 
             /// @dev Calculates the canonical hash of the L1->L2 transaction that will be
@@ -976,9 +1014,6 @@ object "Bootloader" {
 
                 let payToOperator := safeMul(gasPrice, safeSub(gasLimit, refundGas, "lpah"), "mnk")
 
-                // Note, that for now, the L1->L2 transactions are free, i.e. the gasPrice
-                // for such transactions is always zero, so the `refundGas` is not used anywhere
-                // except for notifications for the operator for API purposes.
                 notifyAboutRefund(refundGas)
 
                 // Paying the fee to the operator
@@ -2187,26 +2222,11 @@ object "Bootloader" {
             /// @dev Checks whether an address is an EOA (i.e. has not code deployed on it)
             /// @param addr The address to check
             function isEOA(addr) -> ret {
-                mstore(0, {{RIGHT_PADDED_GET_RAW_CODE_HASH_SELECTOR}})
-                mstore(4, addr)
-                let success := call(
-                    gas(),
-                    ACCOUNT_CODE_STORAGE_ADDR(),
-                    0,
-                    0,
-                    36,
-                    0,
-                    32
-                )
+                ret := 0
 
-                if iszero(success) {
-                    // The call to the account code storage should always succeed
-                    nearCallPanic()
+                if gt(addr, MAX_SYSTEM_CONTRACT_ADDR()) {
+                    ret := iszero(getRawCodeHash(addr, false))
                 }
-
-                let rawCodeHash := mload(0)
-
-                ret := iszero(rawCodeHash)
             }
 
             /// @dev Calls the `payForTransaction` method of an account
@@ -3903,16 +3923,16 @@ object "Bootloader" {
                 /// the operator still provides it to make sure that its data is in sync.
                 let EXPECTED_BASE_FEE := mload(192)
 
+                // When the 1.4.1 VM launches, the old Keccak precompile will stop working.
+                // Thus, the first thing we need to do before any transaction starts is to upgrade
+                // keccak precompile to the new version.
+                upgradeKeccakIfNeeded()
+
                 validateOperatorProvidedPrices(L1_GAS_PRICE, FAIR_L2_GAS_PRICE)
 
                 let baseFee := 0
 
                 <!-- @if BOOTLOADER_TYPE=='proved_batch' -->
-
-                // This implementation of the bootloader relies on the correct version of the SystemContext
-                // and it can not be upgraded via a standard upgrade transaction, but needs to ensure
-                // correctness itself before any transaction is executed.
-                upgradeSystemContextIfNeeded()
 
                 // Only for the proved batch we enforce that the baseFee proposed
                 // by the operator is equal to the expected one. For the playground batch, we allow
@@ -3934,10 +3954,8 @@ object "Bootloader" {
 
                 let SHOULD_SET_NEW_BATCH := mload(224)
 
-                upgradeSystemContextIfNeeded()
-
-                switch SHOULD_SET_NEW_BATCH 
-                case 0 {    
+                switch SHOULD_SET_NEW_BATCH
+                case 0 {
                     unsafeOverrideBatch(NEW_BATCH_TIMESTAMP, NEW_BATCH_NUMBER, EXPECTED_BASE_FEE)
                 }
                 default {
@@ -3957,7 +3975,7 @@ object "Bootloader" {
 
             let txPtr := TX_DESCRIPTION_BEGIN_BYTE()
 
-            // At the COMPRESSED_BYTECODES_BEGIN_BYTE() the pointer to the newest bytecode to be published 
+            // At the COMPRESSED_BYTECODES_BEGIN_BYTE() the pointer to the newest bytecode to be published
             // is stored.
             mstore(COMPRESSED_BYTECODES_BEGIN_BYTE(), add(COMPRESSED_BYTECODES_BEGIN_BYTE(), 32))
 
@@ -3966,10 +3984,10 @@ object "Bootloader" {
             mstore(add(PRIORITY_TXS_L1_DATA_BEGIN_BYTE(), 32), 0)
 
             // Iterating through transaction descriptions
-            let transactionIndex := 0 
-            for { 
+            let transactionIndex := 0
+            for {
                 let resultPtr := RESULT_START_PTR()
-            } lt(txPtr, TXS_IN_BATCH_LAST_PTR()) { 
+            } lt(txPtr, TXS_IN_BATCH_LAST_PTR()) {
                 txPtr := add(txPtr, TX_DESCRIPTION_SIZE())
                 resultPtr := add(resultPtr, 32)
                 transactionIndex := add(transactionIndex, 1)
@@ -3978,12 +3996,12 @@ object "Bootloader" {
 
                 debugLog("txPtr", txPtr)
                 debugLog("execute", execute)
-                
+
                 if iszero(execute) {
                     // We expect that all transactions that are executed
                     // are continuous in the array.
                     break
-                }                
+                }
 
                 let txDataOffset := mload(add(txPtr, 32))
 
@@ -4007,7 +4025,7 @@ object "Bootloader" {
                 }
 
                 validateTypedTxStructure(add(txDataOffset, 32))
-    
+
                 <!-- @if BOOTLOADER_TYPE=='proved_batch' -->
                 {
                     debugLog("ethCall", 0)
@@ -4036,7 +4054,7 @@ object "Bootloader" {
                 // Increment tx index within the system.
                 considerNewTx()
             }
-            
+
             // The bootloader doesn't have to pay anything
             setPricePerPubdataByte(0)
 
@@ -4054,7 +4072,7 @@ object "Bootloader" {
             // Hook that notifies that the operator should provide final information for the batch
             setHook(VM_HOOK_FINAL_L2_STATE_INFO())
 
-            // Each batch typically ends with a special block which contains no transactions. 
+            // Each batch typically ends with a special block which contains no transactions.
             // So we need to have this method to reflect it in the system contracts too.
             //
             // The reason is that as of now our node requires that each storage write (event, etc) belongs to a particular
@@ -4062,7 +4080,7 @@ object "Bootloader" {
             // to seal it to assure timely finality), we need to process sending funds to the operator *after* the last
             // non-empty L2 block has been already sealed. We can not override old L2 blocks, so we need to create a new empty "fictive" block for it.
             //
-            // The other reason why we need to set this block is so that in case of empty batch (i.e. the one which has no transactions), 
+            // The other reason why we need to set this block is so that in case of empty batch (i.e. the one which has no transactions),
             // the virtual block number as well as miniblock number are incremented.
             setL2Block(transactionIndex)
 
@@ -4073,7 +4091,7 @@ object "Bootloader" {
             // Sending system logs (to be processed on L1)
             sendToL1Native(true, chainedPriorityTxnHashLogKey(), mload(PRIORITY_TXS_L1_DATA_BEGIN_BYTE()))
             sendToL1Native(true, numberOfLayer1TxsLogKey(), mload(add(PRIORITY_TXS_L1_DATA_BEGIN_BYTE(), 32)))
-            
+
             l1MessengerPublishingCall()
         }
     }
