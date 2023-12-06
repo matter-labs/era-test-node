@@ -6,7 +6,7 @@ on:
     tags:
       - 'v*'
   pull_request:
-    branches: [boojum-integration]
+    branches: [main]
   workflow_dispatch:
 
 jobs:

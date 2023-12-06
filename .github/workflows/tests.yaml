@@ -2,11 +2,11 @@ name: run
 
 on:
   push:
-    branches: [boojum-integration]
+    branches: [main]
     tags:
       - 'v*'
   pull_request:
-    branches: [boojum-integration]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
