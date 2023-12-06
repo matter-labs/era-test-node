@@ -1284,7 +1284,6 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> EthTestNod
             }
         };
 
-        // TODO: refactor the way the transaction is converted
         let mut tx_req = TransactionRequest::from(tx.clone());
         // EIP-1559 gas fields should be processed separately
         if tx.gas_price.is_some() {
@@ -1301,7 +1300,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> EthTestNod
                 tx_req.transaction_type = Some(zksync_types::EIP_1559_TX_TYPE.into());
             }
         }
-        // To be successfully converted into l2 tx
+        // Needed to calculate hash
         tx_req.r = Some(U256::default());
         tx_req.s = Some(U256::default());
         tx_req.v = Some(U64::from(27));
@@ -1324,18 +1323,13 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> EthTestNod
                     .boxed()
             }
         };
-        // For non-legacy txs v was overwritten with 0 while converting into l2 tx
+
+        // `v` was overwritten with 0 during converting into l2 tx
         let mut signature = vec![0u8; 65];
         signature[64] = 27;
         l2_tx.common_data.signature = signature;
 
         l2_tx.set_input(bytes, hash);
-        if hash != l2_tx.hash() {
-            return futures::future::err(into_jsrpc_error(Web3Error::InvalidTransactionData(
-                zksync_types::ethabi::Error::InvalidData,
-            )))
-            .boxed();
-        };
 
         match self.get_inner().read() {
             Ok(reader) => {
@@ -1355,7 +1349,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> EthTestNod
         }
 
         match self.run_l2_tx(l2_tx.clone(), TxExecutionMode::VerifyExecute) {
-            Ok(_) => Ok(hash).into_boxed_future(),
+            Ok(_) => Ok(l2_tx.hash()).into_boxed_future(),
             Err(e) => {
                 let error_message = format!("Execution error: {}", e);
                 futures::future::err(into_jsrpc_error(Web3Error::SubmitTransactionError(

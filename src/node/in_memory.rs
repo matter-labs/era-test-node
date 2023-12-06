@@ -7,7 +7,7 @@ use crate::{
     fork::{ForkDetails, ForkSource, ForkStorage},
     formatter,
     observability::Observability,
-    system_contracts::{self, Options, SystemContracts},
+    system_contracts::{self, SystemContracts},
     utils::{
         adjust_l1_gas_price_for_tx, bytecode_to_factory_dep, create_debug_output, to_human_size,
     },
@@ -1282,10 +1282,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         l2_tx: L2Tx,
         execution_mode: TxExecutionMode,
         mut tracers: Vec<
-            TracerPointer<
-                StorageView<ForkStorage<S>>,
-                multivm::vm_latest::HistoryDisabled,
-            >,
+            TracerPointer<StorageView<ForkStorage<S>>, multivm::vm_latest::HistoryDisabled>,
         >,
     ) -> Result<L2TxResult, String> {
         let inner = self

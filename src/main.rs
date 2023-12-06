@@ -43,8 +43,8 @@ use jsonrpc_core::MetaIoHandler;
 use zksync_basic_types::{H160, H256};
 
 use crate::namespaces::{
-    ConfigurationApiNamespaceT, DebugNamespaceT, EthNamespaceT, EthTestNodeNamespaceT, EvmNamespaceT, HardhatNamespaceT,
-    NetNamespaceT, Web3NamespaceT, ZksNamespaceT,
+    ConfigurationApiNamespaceT, DebugNamespaceT, EthNamespaceT, EthTestNodeNamespaceT,
+    EvmNamespaceT, HardhatNamespaceT, NetNamespaceT, Web3NamespaceT, ZksNamespaceT,
 };
 
 /// List of wallets (address, private key) that we seed with tokens at start.
