@@ -194,8 +194,8 @@ async function main() {
   );
   // For impersonating block end
 
-console.log("Preprocessing bootloader tests");
-const bootloaderTests = await renderFile("bootloader/tests/bootloader/bootloader_test.yul", {});
+  console.log("Preprocessing bootloader tests");
+  const bootloaderTests = await renderFile("bootloader/tests/bootloader/bootloader_test.yul", {});
 
   const testMethods = extractTestFunctionNames(bootloaderTests);
 
