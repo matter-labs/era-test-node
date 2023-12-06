@@ -1161,9 +1161,7 @@ object "Bootloader" {
                     gasLimitForTx,
                     gasPrice
                 )
-                <!-- @ifdef ACCOUNT_IMPERSONATING -->
-                let gasLeft := gasLimitForTx
-                <!-- @endif -->
+
                 ///
                 /// DEBUG SUPPORT START
                 ///
