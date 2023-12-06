@@ -11,7 +11,7 @@ The following directories/files were copied:
 
 The next changes were introduced:
 - [bootloader.yul](bootloader%2Fbootloader.yul)
-  - Debug data, marked as `DEBUG SUPPORT` blocks
-  - Impersonating preprocessing mode, blocks `<!-- @ifdef ACCOUNT_IMPERSONATING -->` and somewhere added `<!-- @ifndef ACCOUNT_IMPERSONATING -->` condition.
-[process.ts](scripts%2Fprocess.ts)
-  - Impersonating preprocessing mode, "For impersonating" blocks
+  - Debug data, marked as `DEBUG SUPPORT` blocks.
+  - Impersonating preprocessing mode, blocks `<!-- @ifdef ACCOUNT_IMPERSONATING -->` and at some places added `<!-- @ifndef ACCOUNT_IMPERSONATING -->` condition.
+- [process.ts](scripts%2Fprocess.ts)
+  - Impersonating preprocessing mode, "For impersonating" blocks.
