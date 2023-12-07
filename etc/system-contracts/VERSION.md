@@ -1,5 +1,7 @@
-This directory was copied from https://github.com/matter-labs/era-system-contracts
-The current commit: `a00ab9a11643f3a918ed95cdf8a04edff5499d92`
+This directory was copied from https://github.com/matter-labs/era-system-contracts.
+
+The current commit: `a00ab9a11643f3a918ed95cdf8a04edff5499d92`.
+
 The following directories/files were copied:
 - [bootloader](bootloader)
 - [contracts](contracts)
