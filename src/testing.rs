@@ -5,7 +5,6 @@
 
 #![cfg(test)]
 
-use crate::deps::InMemoryStorage;
 use crate::node::{InMemoryNode, TxExecutionInfo};
 use crate::{fork::ForkSource, node::compute_hash};
 
@@ -19,6 +18,7 @@ use itertools::Itertools;
 use multivm::interface::{ExecutionResult, VmExecutionResultAndLogs};
 use std::str::FromStr;
 use zksync_basic_types::{AccountTreeId, MiniblockNumber, H160, U64};
+use zksync_state::InMemoryStorage;
 use zksync_types::api::{BlockIdVariant, BridgeAddresses, DebugCall, DebugCallType, Log};
 use zksync_types::block::pack_block_info;
 use zksync_types::StorageKey;
@@ -688,7 +688,7 @@ impl ForkSource for &ExternalStorage {
         let key = StorageKey::new(AccountTreeId::new(address), u256_to_h256(idx));
         Ok(self
             .raw_storage
-            .state
+            .get_state()
             .get(&key)
             .cloned()
             .unwrap_or_default())
