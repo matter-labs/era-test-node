@@ -2,7 +2,6 @@
 use crate::{
     bootloader_debug::{BootloaderDebug, BootloaderDebugTracer},
     console_log::ConsoleLogHandler,
-    deps::InMemoryStorage,
     filters::EthFilters,
     fork::{ForkDetails, ForkSource, ForkStorage},
     formatter,
@@ -46,7 +45,7 @@ use zksync_basic_types::{
 };
 use zksync_contracts::BaseSystemContracts;
 use zksync_core::api_server::web3::backend_jsonrpc::error::into_jsrpc_error;
-use zksync_state::{ReadStorage, StoragePtr, StorageView, WriteStorage};
+use zksync_state::{InMemoryStorage, ReadStorage, StoragePtr, StorageView, WriteStorage};
 use zksync_types::{
     api::{Block, DebugCall, Log, TransactionReceipt, TransactionVariant},
     block::legacy_miniblock_hash,
@@ -312,7 +311,7 @@ pub struct InMemoryNodeInner<S> {
     pub impersonated_accounts: HashSet<Address>,
     pub rich_accounts: HashSet<H160>,
     /// Keeps track of historical states indexed via block hash. Limited to [MAX_PREVIOUS_STATES].
-    pub previous_states: IndexMap<H256, HashMap<StorageKey, StorageValue>>,
+    pub previous_states: IndexMap<H256, HashMap<StorageKey, (StorageValue, u64)>>,
     /// An optional handle to the observability stack
     pub observability: Option<Observability>,
 }
@@ -756,7 +755,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
                 .read()
                 .map_err(|err| err.to_string())?
                 .raw_storage
-                .state
+                .get_state()
                 .clone(),
         );
 
@@ -833,7 +832,7 @@ pub struct Snapshot {
     pub(crate) filters: EthFilters,
     pub(crate) impersonated_accounts: HashSet<Address>,
     pub(crate) rich_accounts: HashSet<H160>,
-    pub(crate) previous_states: IndexMap<H256, HashMap<StorageKey, StorageValue>>,
+    pub(crate) previous_states: IndexMap<H256, HashMap<StorageKey, (StorageValue, u64)>>,
     pub(crate) raw_storage: InMemoryStorage,
     pub(crate) value_read_cache: HashMap<StorageKey, H256>,
     pub(crate) factory_dep_cache: HashMap<H256, Option<Vec<u8>>>,

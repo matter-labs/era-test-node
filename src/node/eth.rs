@@ -979,7 +979,8 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> EthNamespa
                     .and_then(|block_hash| writer.previous_states.get(block_hash))
                     .and_then(|state| state.get(&storage_key))
                     .cloned()
-                    .unwrap_or_default();
+                    .unwrap_or_default()
+                    .0;
 
                 if value.is_zero() {
                     Ok(H256(writer.fork_storage.read_value(&storage_key).0))
