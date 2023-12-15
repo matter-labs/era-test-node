@@ -1,4 +1,10 @@
-use multivm::interface::{dyn_tracers::vm_1_4_0::DynTracer, tracer::VmExecutionStopReason};
+use multivm::{
+    interface::{dyn_tracers::vm_1_4_0::DynTracer, tracer::VmExecutionStopReason},
+    zk_evm_1_4_0::{
+        tracing::{AfterDecodingData, VmLocalStateData},
+        vm_state::ErrorFlags,
+    },
+};
 use std::sync::Arc;
 
 use multivm::vm_latest::{
@@ -82,7 +88,48 @@ pub struct BootloaderDebugTracer {
     pub result: Arc<OnceCell<eyre::Result<BootloaderDebug, String>>>,
 }
 
-impl<S, H: HistoryMode> DynTracer<S, SimpleMemory<H>> for BootloaderDebugTracer {}
+impl<S, H: HistoryMode> DynTracer<S, SimpleMemory<H>> for BootloaderDebugTracer {
+    fn after_decoding(
+        &mut self,
+        _state: VmLocalStateData<'_>,
+        _data: AfterDecodingData,
+        _memory: &SimpleMemory<H>,
+    ) {
+        if !_data.error_flags_accumulated.is_empty() {
+            tracing::error!("!! Got error flags: ");
+            if _data
+                .error_flags_accumulated
+                .contains(ErrorFlags::INVALID_OPCODE)
+            {
+                tracing::error!("INVALID OPCODE");
+            }
+            if _data
+                .error_flags_accumulated
+                .contains(ErrorFlags::NOT_ENOUGH_ERGS)
+            {
+                tracing::error!("NOT ENOUGH ERGS");
+            }
+            if _data
+                .error_flags_accumulated
+                .contains(ErrorFlags::PRIVILAGED_ACCESS_NOT_FROM_KERNEL)
+            {
+                tracing::error!("PRIVILEGED ACCESS");
+            }
+            if _data
+                .error_flags_accumulated
+                .contains(ErrorFlags::WRITE_IN_STATIC_CONTEXT)
+            {
+                tracing::error!("WRITE IN STATIC");
+            }
+            if _data
+                .error_flags_accumulated
+                .contains(ErrorFlags::CALLSTACK_IS_FULL)
+            {
+                tracing::error!("CALLSTACK IS FULL");
+            }
+        }
+    }
+}
 
 fn load_debug_slot<H: HistoryMode>(memory: &SimpleMemory<H>, slot: usize) -> U256 {
     memory
