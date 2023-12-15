@@ -43,8 +43,8 @@ use jsonrpc_core::MetaIoHandler;
 use zksync_basic_types::{H160, H256};
 
 use crate::namespaces::{
-    ConfigurationApiNamespaceT, DebugNamespaceT, EthNamespaceT, EvmNamespaceT, HardhatNamespaceT,
-    NetNamespaceT, Web3NamespaceT, ZksNamespaceT,
+    ConfigurationApiNamespaceT, DebugNamespaceT, EthNamespaceT, EthTestNodeNamespaceT,
+    EvmNamespaceT, HardhatNamespaceT, NetNamespaceT, Web3NamespaceT, ZksNamespaceT,
 };
 
 /// List of wallets (address, private key) that we seed with tokens at start.
@@ -109,6 +109,7 @@ async fn build_json_http<
         io.extend_with(ConfigurationApiNamespaceT::to_delegate(node.clone()));
         io.extend_with(DebugNamespaceT::to_delegate(node.clone()));
         io.extend_with(EthNamespaceT::to_delegate(node.clone()));
+        io.extend_with(EthTestNodeNamespaceT::to_delegate(node.clone()));
         io.extend_with(EvmNamespaceT::to_delegate(node.clone()));
         io.extend_with(HardhatNamespaceT::to_delegate(node.clone()));
         io.extend_with(ZksNamespaceT::to_delegate(node));
