@@ -22,7 +22,7 @@ use zksync_types::{
     ProtocolVersionId, StorageKey,
 };
 
-use zksync_state::ReadStorage;
+use zksync_state::{InMemoryStorage, ReadStorage};
 use zksync_utils::{bytecode::hash_bytecode, h256_to_u256};
 
 use zksync_web3_decl::{
@@ -30,9 +30,10 @@ use zksync_web3_decl::{
 };
 use zksync_web3_decl::{jsonrpsee::http_client::HttpClientBuilder, namespaces::ZksNamespaceClient};
 
+use crate::http_fork_source::HttpForkSource;
+use crate::system_contracts;
+use crate::system_contracts::get_deployed_contracts;
 use crate::{cache::CacheConfig, node::TEST_NODE_NETWORK_ID};
-use crate::{deps::InMemoryStorage, http_fork_source::HttpForkSource};
-use crate::{deps::ReadStorage as RS, system_contracts};
 
 pub fn block_on<F: Future + Send + 'static>(future: F) -> F::Output
 where
@@ -84,10 +85,10 @@ impl<S: ForkSource> ForkStorage<S> {
 
         ForkStorage {
             inner: Arc::new(RwLock::new(ForkStorageInner {
-                raw_storage: InMemoryStorage::with_system_contracts_and_chain_id(
+                raw_storage: InMemoryStorage::with_custom_system_contracts_and_chain_id(
                     chain_id,
                     hash_bytecode,
-                    system_contracts_options,
+                    get_deployed_contracts(system_contracts_options),
                 ),
                 value_read_cache: Default::default(),
                 fork,
