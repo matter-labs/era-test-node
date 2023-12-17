@@ -36,11 +36,12 @@ use multivm::{
         utils::{
             fee::derive_base_fee_and_gas_per_pubdata,
             l2_blocks::load_last_l2_block,
-            overhead::{derive_overhead, OverheadCoefficients},
+            overhead::{derive_overhead, OverheadCoeficients},
         },
         ToTracerPointer, TracerPointer, Vm,
     },
 };
+
 use zksync_basic_types::{
     web3::signing::keccak256, Address, Bytes, L1BatchNumber, MiniblockNumber, H160, H256, U256, U64,
 };
@@ -565,7 +566,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
             &self.fork_storage,
         );
 
-        let coefficients = OverheadCoefficients::from_tx_type(EIP_712_TX_TYPE);
+        let coefficients = OverheadCoeficients::from_tx_type(EIP_712_TX_TYPE);
         let overhead: u32 = derive_overhead(
             suggested_gas_limit,
             gas_per_pubdata_byte as u32,
@@ -688,7 +689,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
         let l1_gas_price =
             adjust_l1_gas_price_for_tx(l1_gas_price, L2_GAS_PRICE, tx.gas_per_pubdata_byte_limit());
 
-        let coefficients = OverheadCoefficients::from_tx_type(EIP_712_TX_TYPE);
+        let coefficients = OverheadCoeficients::from_tx_type(EIP_712_TX_TYPE);
         // Set gas_limit for transaction
         let gas_limit_with_overhead = tx_gas_limit
             + derive_overhead(
@@ -1564,7 +1565,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
             l1_batch_tx_index: None,
             l1_batch_number: block.l1_batch_number,
             from: l2_tx.initiator_account(),
-            to: Some(l2_tx.recipient_account()),
+            to: l2_tx.recipient_account(),
             root: Some(H256::zero()),
             cumulative_gas_used: Default::default(),
             gas_used: Some(l2_tx.common_data.fee.gas_limit - result.refunds.gas_refunded),
@@ -1865,7 +1866,7 @@ mod tests {
         );
 
         let mut tx = L2Tx::new_signed(
-            deployed_address,
+            Some(deployed_address),
             hex::decode("bbf55335").unwrap(), // keccak selector for "transact_retrieve1()"
             Nonce(1),
             Fee {

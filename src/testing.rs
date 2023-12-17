@@ -407,7 +407,7 @@ impl TransactionBuilder {
 
     pub fn build(&mut self) -> L2Tx {
         let mut tx = L2Tx::new_signed(
-            Address::random(),
+            Some(Address::random()),
             vec![],
             Nonce(0),
             Fee {
@@ -507,7 +507,7 @@ pub fn deploy_contract<T: ForkSource + std::fmt::Debug + Clone>(
         .expect("failed encoding function data");
 
     let mut tx = L2Tx::new_signed(
-        zksync_types::CONTRACT_DEPLOYER_ADDRESS,
+        Some(zksync_types::CONTRACT_DEPLOYER_ADDRESS),
         data.to_vec(),
         nonce,
         Fee {

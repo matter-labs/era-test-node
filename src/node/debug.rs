@@ -293,7 +293,7 @@ mod tests {
         let func = HumanReadableParser::parse_function("calculate(uint)").unwrap();
         let calldata = func.encode_input(&[Token::Uint(U256::from(42))]).unwrap();
         let request = CallRequestBuilder::default()
-            .to(primary_deployed_address)
+            .to(Some(primary_deployed_address))
             .data(calldata.clone().into())
             .gas(80_000_000.into())
             .build();
@@ -343,7 +343,7 @@ mod tests {
         let func = HumanReadableParser::parse_function("calculate(uint)").unwrap();
         let calldata = func.encode_input(&[Token::Uint(U256::from(42))]).unwrap();
         let request = CallRequestBuilder::default()
-            .to(primary_deployed_address)
+            .to(Some(primary_deployed_address))
             .data(calldata.into())
             .gas(80_000_000.into())
             .build();
@@ -378,7 +378,7 @@ mod tests {
 
         // trace a call to the primary contract
         let request = CallRequestBuilder::default()
-            .to(primary_deployed_address)
+            .to(Some(primary_deployed_address))
             .data(short_signature("shouldRevert()", &[]).into())
             .gas(80_000_000.into())
             .build();

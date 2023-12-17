@@ -443,7 +443,7 @@ mod tests {
 
         // construct a tx
         let mut tx = L2Tx::new(
-            Address::random(),
+            Some(Address::random()),
             vec![],
             Nonce(0),
             Fee {
