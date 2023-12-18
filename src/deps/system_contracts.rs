@@ -4,7 +4,8 @@ use zksync_basic_types::{AccountTreeId, Address, H160};
 use zksync_types::{
     block::DeployedContract, ACCOUNT_CODE_STORAGE_ADDRESS, BOOTLOADER_ADDRESS,
     BOOTLOADER_UTILITIES_ADDRESS, COMPRESSOR_ADDRESS, CONTRACT_DEPLOYER_ADDRESS,
-    ECRECOVER_PRECOMPILE_ADDRESS, EVENT_WRITER_ADDRESS, IMMUTABLE_SIMULATOR_STORAGE_ADDRESS,
+    ECRECOVER_PRECOMPILE_ADDRESS, EVENT_WRITER_ADDRESS, EVM_CONTRACT_ADDRESS,
+    EVM_GAS_MANAGER_ADDRESS, EVM_INTERPRETER_ADDRESS, IMMUTABLE_SIMULATOR_STORAGE_ADDRESS,
     KECCAK256_PRECOMPILE_ADDRESS, KNOWN_CODES_STORAGE_ADDRESS, L1_MESSENGER_ADDRESS,
     L2_ETH_TOKEN_ADDRESS, MSG_VALUE_SIMULATOR_ADDRESS, NONCE_HOLDER_ADDRESS,
     SHA256_PRECOMPILE_ADDRESS, SYSTEM_CONTEXT_ADDRESS,
@@ -90,6 +91,21 @@ pub static COMPILED_IN_SYSTEM_CONTRACTS: Lazy<Vec<DeployedContract>> = Lazy::new
             "Compressor",
             COMPRESSOR_ADDRESS,
             include_bytes!("contracts/Compressor.json").to_vec(),
+        ),
+        (
+            "EvmInterpreter",
+            EVM_INTERPRETER_ADDRESS,
+            include_bytes!("contracts/EvmInterpreter.json").to_vec(),
+        ),
+        (
+            "EvmGasManager",
+            EVM_GAS_MANAGER_ADDRESS,
+            include_bytes!("contracts/EvmGasManager.json").to_vec(),
+        ),
+        (
+            "EvmContract",
+            EVM_CONTRACT_ADDRESS,
+            include_bytes!("contracts/EvmContract.json").to_vec(),
         ),
     ]
     .map(|(pname, address, contents)| DeployedContract {

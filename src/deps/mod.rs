@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 pub mod system_contracts;
+use zksync_contracts::read_sys_contract_bytecode;
 use zksync_types::{
     get_code_key, get_known_code_key, get_system_context_init_logs, L2ChainId, StorageKey,
     StorageLog, StorageLogKind, StorageValue, H256,
@@ -32,6 +33,7 @@ impl InMemoryStorage {
                 StorageLog::new_write_log(deployer_code_key, bytecode_hasher(&contract.bytecode))
             })
             .chain(system_context_init_log)
+            .chain(crate::system_contracts::additional_logs())
             .filter_map(|log| (log.kind == StorageLogKind::Write).then_some((log.key, log.value)))
             .collect();
 
