@@ -149,6 +149,27 @@ impl<S: ForkSource> ForkStorage<S> {
         }
     }
 
+    /// Check if this is the first time when we're ever writing to this key.
+    /// This has impact on amount of pubdata that we have to spend for the write.
+    fn is_write_initial_internal(&self, key: &StorageKey) -> bool {
+        // Currently we don't have the zks API to return us the information on whether a given
+        // key was written to before a given block.
+        // This means, we have to depend on the following heuristic: we'll read the value of the slot.
+        //  - if value != 0 -> this means that the slot was written to in the past (so we can return intitial_write = false)
+        //  - but if the value = 0 - there is a chance, that slot was written to in the past - and later was reset.
+        //                            but unfortunately we cannot detect that with the current zks api, so we'll attempt to do it
+        //                           only on local storage.
+        let value = self.read_value_internal(key);
+        if value != H256::zero() {
+            return false;
+        }
+
+        // If value was 0, there is still a chance, that the slot was written to in the past - and only now set to 0.
+        // We unfortunately don't have the API to check it on the fork, but we can at least try to check it on local storage.
+        let mut mutator = self.inner.write().unwrap();
+        mutator.raw_storage.is_write_initial(key)
+    }
+
     /// Retrieves the enumeration index for a given `key`.
     fn get_enumeration_index_internal(&self, _key: &StorageKey) -> Option<u64> {
         // TODO: Update this file to use proper enumeration index value once it's exposed for forks via API
@@ -158,8 +179,7 @@ impl<S: ForkSource> ForkStorage<S> {
 
 impl<S: std::fmt::Debug + ForkSource> ReadStorage for ForkStorage<S> {
     fn is_write_initial(&mut self, key: &StorageKey) -> bool {
-        let mut mutator = self.inner.write().unwrap();
-        mutator.raw_storage.is_write_initial(key)
+        self.is_write_initial_internal(key)
     }
 
     fn load_factory_dep(&mut self, hash: H256) -> Option<Vec<u8>> {
@@ -181,8 +201,7 @@ impl<S: std::fmt::Debug + ForkSource> ReadStorage for &ForkStorage<S> {
     }
 
     fn is_write_initial(&mut self, key: &StorageKey) -> bool {
-        let mut mutator = self.inner.write().unwrap();
-        mutator.raw_storage.is_write_initial(key)
+        self.is_write_initial_internal(key)
     }
 
     fn load_factory_dep(&mut self, hash: H256) -> Option<Vec<u8>> {
