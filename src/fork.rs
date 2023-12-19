@@ -487,3 +487,54 @@ impl<S: ForkSource> ForkDetails<S> {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use zksync_basic_types::{AccountTreeId, L1BatchNumber, H256};
+    use zksync_state::ReadStorage;
+    use zksync_types::{api::TransactionVariant, StorageKey};
+
+    use crate::{deps::InMemoryStorage, system_contracts, testing};
+
+    use super::{ForkDetails, ForkStorage};
+
+    #[test]
+    fn test_initial_writes() {
+        let account = AccountTreeId::default();
+        let never_written_key = StorageKey::new(account, H256::from_low_u64_be(1));
+        let key_with_some_value = StorageKey::new(account, H256::from_low_u64_be(2));
+        let key_with_value_0 = StorageKey::new(account, H256::from_low_u64_be(3));
+        let mut in_memory_storage = InMemoryStorage::default();
+        in_memory_storage.set_value(key_with_some_value, H256::from_low_u64_be(13));
+        in_memory_storage.set_value(key_with_value_0, H256::from_low_u64_be(0));
+
+        let external_storage = testing::ExternalStorage {
+            raw_storage: in_memory_storage,
+        };
+
+        let options = system_contracts::Options::default();
+
+        let fork_details = ForkDetails {
+            fork_source: &external_storage,
+            l1_block: L1BatchNumber(1),
+            l2_block: zksync_types::api::Block::<TransactionVariant>::default(),
+            l2_miniblock: 1,
+            l2_miniblock_hash: H256::zero(),
+            block_timestamp: 0,
+            overwrite_chain_id: None,
+            l1_gas_price: 100,
+        };
+
+        let mut fork_storage = ForkStorage::new(Some(fork_details), &options);
+
+        assert_eq!(fork_storage.is_write_initial(&never_written_key), true);
+        assert_eq!(fork_storage.is_write_initial(&key_with_some_value), false);
+        // This is the current limitation of the sytem. In theory, this should return false - as the value was written, but we don't have the API to the
+        // backend to get this information.
+        assert_eq!(fork_storage.is_write_initial(&key_with_value_0), true);
+
+        // But writing any value there in the local storage (even 0) - should make it non-initial write immediately.
+        fork_storage.set_value(key_with_value_0, H256::zero());
+        assert_eq!(fork_storage.is_write_initial(&key_with_value_0), false);
+    }
+}
