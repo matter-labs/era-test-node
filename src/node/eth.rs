@@ -488,7 +488,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> EthNamespa
                         block_number: Some(U64::from(info.miniblock_number)),
                         transaction_index: Some(U64::from(1)),
                         from: Some(info.tx.initiator_account()),
-                        to: Some(info.tx.recipient_account()),
+                        to: info.tx.recipient_account(),
                         value: info.tx.execute.value,
                         gas_price: Some(U256::from(0)),
                         gas: Default::default(),

@@ -1,10 +1,14 @@
 use multivm::interface::TxExecutionMode;
+use zksync_basic_types::{AccountTreeId, H256};
 use zksync_contracts::{
     read_playground_batch_bootloader_bytecode, read_proved_batch_bootloader_bytecode,
     read_sys_contract_bytecode, read_zbin_bytecode, BaseSystemContracts, ContractLanguage,
     SystemContractCode,
 };
-use zksync_types::system_contracts::get_system_smart_contracts;
+use zksync_types::{
+    system_contracts::get_system_smart_contracts, StorageKey, StorageLog,
+    CONTRACT_DEPLOYER_ADDRESS, KNOWN_CODES_STORAGE_ADDRESS,
+};
 use zksync_utils::{bytecode::hash_bytecode, bytes_to_be_words};
 
 use crate::deps::system_contracts::{bytecode_from_slice, COMPILED_IN_SYSTEM_CONTRACTS};
@@ -35,6 +39,30 @@ pub fn get_deployed_contracts(options: &Options) -> Vec<zksync_types::block::Dep
         Options::BuiltIn | Options::BuiltInWithoutSecurity => COMPILED_IN_SYSTEM_CONTRACTS.clone(),
         Options::Local => get_system_smart_contracts(),
     }
+}
+
+pub fn additional_logs() -> Vec<StorageLog> {
+    let evm_proxy_bytecode = bytecode_from_slice(
+        "EvmContract",
+        &include_bytes!("deps/contracts/EvmContract.json").to_vec(),
+    );
+    let evm_proxy_hash = hash_bytecode(&evm_proxy_bytecode);
+    vec![
+        StorageLog::new_write_log(
+            StorageKey::new(
+                AccountTreeId::new(CONTRACT_DEPLOYER_ADDRESS),
+                H256::from_low_u64_be(1),
+            ),
+            evm_proxy_hash,
+        ),
+        StorageLog::new_write_log(
+            StorageKey::new(
+                AccountTreeId::new(KNOWN_CODES_STORAGE_ADDRESS),
+                evm_proxy_hash,
+            ),
+            H256::from_low_u64_be(1),
+        ),
+    ]
 }
 
 impl Default for SystemContracts {

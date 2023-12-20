@@ -11,15 +11,25 @@ categories = ["cryptography"]
 publish = false # We don't want to publish our binaries.
 
 [dependencies]
-zksync_basic_types = { git = "https://github.com/matter-labs/zksync-era.git", rev = "bd268ac02bc3530c1d3247cb9496c3e13c2e52d9" }
-zksync_core = { git = "https://github.com/matter-labs/zksync-era.git", rev = "bd268ac02bc3530c1d3247cb9496c3e13c2e52d9" }
-multivm = { git = "https://github.com/matter-labs/zksync-era.git", rev = "bd268ac02bc3530c1d3247cb9496c3e13c2e52d9" }
-zksync_contracts = { git = "https://github.com/matter-labs/zksync-era.git", rev = "bd268ac02bc3530c1d3247cb9496c3e13c2e52d9" }
-zksync_types = { git = "https://github.com/matter-labs/zksync-era.git", rev = "bd268ac02bc3530c1d3247cb9496c3e13c2e52d9" }
-zksync_utils = { git = "https://github.com/matter-labs/zksync-era.git", rev = "bd268ac02bc3530c1d3247cb9496c3e13c2e52d9" }
-zksync_state = { git = "https://github.com/matter-labs/zksync-era.git", rev = "bd268ac02bc3530c1d3247cb9496c3e13c2e52d9" }
-zksync_web3_decl = { git = "https://github.com/matter-labs/zksync-era.git", rev = "bd268ac02bc3530c1d3247cb9496c3e13c2e52d9" }
+#zksync_basic_types = { git = "https://github.com/matter-labs/zksync-era.git", rev = "bd268ac02bc3530c1d3247cb9496c3e13c2e52d9" }
+#zksync_core = { git = "https://github.com/matter-labs/zksync-era.git", rev = "bd268ac02bc3530c1d3247cb9496c3e13c2e52d9" }
+#multivm = { git = "https://github.com/matter-labs/zksync-era.git", rev = "bd268ac02bc3530c1d3247cb9496c3e13c2e52d9" }
+#zksync_contracts = { git = "https://github.com/matter-labs/zksync-era.git", rev = "bd268ac02bc3530c1d3247cb9496c3e13c2e52d9" }
+#zksync_types = { git = "https://github.com/matter-labs/zksync-era.git", rev = "bd268ac02bc3530c1d3247cb9496c3e13c2e52d9" }
+#zksync_utils = { git = "https://github.com/matter-labs/zksync-era.git", rev = "bd268ac02bc3530c1d3247cb9496c3e13c2e52d9" }
+#zksync_state = { git = "https://github.com/matter-labs/zksync-era.git", rev = "bd268ac02bc3530c1d3247cb9496c3e13c2e52d9" }
+#zksync_web3_decl = { git = "https://github.com/matter-labs/zksync-era.git", rev = "bd268ac02bc3530c1d3247cb9496c3e13c2e52d9" }
 sha3 = "0.10.6"
+
+zksync_basic_types = { path = "../evm-equiv-zksync-2-dev/core/lib/basic_types" }
+zksync_core = { path = "../evm-equiv-zksync-2-dev/core/lib/zksync_core" }
+multivm = { path = "../evm-equiv-zksync-2-dev/core/lib/multivm" }
+zksync_contracts = { path = "../evm-equiv-zksync-2-dev/core/lib/contracts" }
+zksync_types = { path = "../evm-equiv-zksync-2-dev/core/lib/types" }
+zksync_utils = { path = "../evm-equiv-zksync-2-dev/core/lib/utils" }
+zksync_state ={ path = "../evm-equiv-zksync-2-dev/core/lib/state" }
+zksync_web3_decl = { path = "../evm-equiv-zksync-2-dev/core/lib/web3_decl" }
+
 
 
 openssl-sys = { version = "0.9", features = ["vendored"] }
