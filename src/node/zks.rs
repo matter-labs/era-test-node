@@ -16,10 +16,7 @@ use zksync_types::{
     ExecuteTransactionCommon, ProtocolVersionId, Transaction, L2_ETH_TOKEN_ADDRESS,
 };
 use zksync_utils::h256_to_u256;
-use zksync_web3_decl::{
-    error::Web3Error,
-    types::{Filter, Log},
-};
+use zksync_web3_decl::error::Web3Error;
 
 use crate::{
     fork::ForkSource,
@@ -507,10 +504,6 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> ZksNamespa
 
     fn get_protocol_version(&self, _version_id: Option<u16>) -> RpcResult<Option<ProtocolVersion>> {
         not_implemented("zks_getProtocolVersion")
-    }
-
-    fn get_logs_with_virtual_blocks(&self, _filter: Filter) -> RpcResult<Vec<Log>> {
-        not_implemented("zks_getLogs")
     }
 }
 
