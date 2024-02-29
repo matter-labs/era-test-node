@@ -5,42 +5,43 @@ import "@nomiclabs/hardhat-ethers";
 import "hardhat-typechain";
 
 export default {
-    zksolc: {
-        version: "1.3.18",
-        compilerSource: "binary",
-        settings: {
-            isSystem: true,
+  zksolc: {
+    compilerSource: "binary",
+    settings: {
+      compilerPath:
+        "https://github.com/matter-labs/era-compiler-solidity/releases/download/prerelease-e880101-test-features/zksolc-macosx-arm64",
+      isSystem: true,
+    },
+  },
+  zkSyncDeploy: {
+    zkSyncNetwork: "http://localhost:3050",
+    ethNetwork: "http://localhost:8545",
+  },
+  solidity: {
+    version: "0.8.20",
+    settings: {
+      optimizer: {
+        enabled: true,
+        runs: 9999999,
+      },
+      outputSelection: {
+        "*": {
+          "*": ["storageLayout"],
         },
+      },
     },
-    zkSyncDeploy: {
-        zkSyncNetwork: "http://localhost:3050",
-        ethNetwork: "http://localhost:8545",
+  },
+  networks: {
+    hardhat: {
+      zksync: true,
     },
-    solidity: {
-        version: "0.8.20",
-        settings: {
-            optimizer: {
-                enabled: true,
-                runs: 9999999,
-            },
-            outputSelection: {
-                "*": {
-                    "*": ["storageLayout"],
-                },
-            },
-        },
+    zkSyncTestNode: {
+      url: "http://127.0.0.1:8011",
+      ethNetwork: "",
+      zksync: true,
     },
-    networks: {
-        hardhat: {
-            zksync: true,
-        },
-        zkSyncTestNode: {
-            url: "http://127.0.0.1:8011",
-            ethNetwork: "",
-            zksync: true,
-        },
-    },
-    paths: {
-        sources: "./contracts-preprocessed",
-    },
+  },
+  paths: {
+    sources: "./contracts-preprocessed",
+  },
 };
