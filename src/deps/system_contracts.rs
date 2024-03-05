@@ -2,7 +2,7 @@ use once_cell::sync::Lazy;
 use serde_json::Value;
 use zksync_basic_types::{AccountTreeId, Address, H160};
 use zksync_types::{
-    block::DeployedContract, ACCOUNT_CODE_STORAGE_ADDRESS, BOOTLOADER_ADDRESS, BOOTLOADER_UTILITIES_ADDRESS, CODE_ORACLE_ADDRESS, COMPRESSOR_ADDRESS, CONTRACT_DEPLOYER_ADDRESS, ECRECOVER_PRECOMPILE_ADDRESS, EVENT_WRITER_ADDRESS, IMMUTABLE_SIMULATOR_STORAGE_ADDRESS, KECCAK256_PRECOMPILE_ADDRESS, KNOWN_CODES_STORAGE_ADDRESS, L1_MESSENGER_ADDRESS, L2_ETH_TOKEN_ADDRESS, MSG_VALUE_SIMULATOR_ADDRESS, NONCE_HOLDER_ADDRESS, SEKP_256_R1_PRECOMPILE_ADDRESS, SHA256_PRECOMPILE_ADDRESS, SYSTEM_CONTEXT_ADDRESS
+    block::DeployedContract, ACCOUNT_CODE_STORAGE_ADDRESS, BOOTLOADER_ADDRESS, BOOTLOADER_UTILITIES_ADDRESS, CODE_ORACLE_ADDRESS, COMPRESSOR_ADDRESS, CONTRACT_DEPLOYER_ADDRESS, ECRECOVER_PRECOMPILE_ADDRESS, EVENT_WRITER_ADDRESS, IMMUTABLE_SIMULATOR_STORAGE_ADDRESS, KECCAK256_PRECOMPILE_ADDRESS, KNOWN_CODES_STORAGE_ADDRESS, L1_MESSENGER_ADDRESS, L2_ETH_TOKEN_ADDRESS, MSG_VALUE_SIMULATOR_ADDRESS, NONCE_HOLDER_ADDRESS, P256VERIFY_PRECOMPILE_ADDRESS, PUBDATA_CHUNK_PUBLISHER_ADDRESS, SHA256_PRECOMPILE_ADDRESS, SYSTEM_CONTEXT_ADDRESS
 };
 
 /// The `ecAdd` system contract address.
@@ -86,6 +86,11 @@ pub static COMPILED_IN_SYSTEM_CONTRACTS: Lazy<Vec<DeployedContract>> = Lazy::new
             COMPRESSOR_ADDRESS,
             include_bytes!("contracts/Compressor.json").to_vec(),
         ),
+        (
+            "PubdataChunkPublisher",
+            PUBDATA_CHUNK_PUBLISHER_ADDRESS,
+            include_bytes!("contracts/PubdataChunkPublisher.json").to_vec(),
+        ),
     ]
     .map(|(pname, address, contents)| DeployedContract {
         account_id: AccountTreeId::new(address),
@@ -111,9 +116,9 @@ pub static COMPILED_IN_SYSTEM_CONTRACTS: Lazy<Vec<DeployedContract>> = Lazy::new
             include_bytes!("contracts/Ecrecover.yul.zbin").to_vec(),
         ),
         (
-            "Sekp256r1",
-            SEKP_256_R1_PRECOMPILE_ADDRESS,
-            include_bytes!("contracts/Sekp256r1.yul.zbin").to_vec(),
+            "P256Verify",
+            P256VERIFY_PRECOMPILE_ADDRESS,
+            include_bytes!("contracts/P256Verify.yul.zbin").to_vec(),
         ),
         (
             "CodeOracle",

@@ -31,7 +31,7 @@ use multivm::{
         ExecutionResult, L1BatchEnv, L2BlockEnv, SystemEnv, TxExecutionMode, VmExecutionMode,
         VmExecutionResultAndLogs, VmInterface,
     },
-    vm_latest::L2Block,
+    vm_latest::{constants::MAX_VM_PUBDATA_PER_BATCH, L2Block},
     VmVersion,
 };
 use multivm::{
@@ -42,7 +42,7 @@ use multivm::{
     },
     vm_latest::HistoryDisabled,
     vm_latest::{
-        constants::{BLOCK_GAS_LIMIT, MAX_PUBDATA_PER_BLOCK},
+        constants::{BLOCK_GAS_LIMIT},
         utils::l2_blocks::load_last_l2_block,
         ToTracerPointer, TracerPointer, Vm,
     },
@@ -467,6 +467,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
             adjust_pubdata_price_for_tx(
                 fee_input,
                 tx.gas_per_pubdata_byte_limit(),
+                None,
                 VmVersion::latest(),
             )
         };
@@ -514,7 +515,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
             })
             .sum::<u32>();
 
-        if pubdata_for_factory_deps > MAX_PUBDATA_PER_BLOCK {
+        if pubdata_for_factory_deps > (MAX_VM_PUBDATA_PER_BATCH as u32) {
             return Err(into_jsrpc_error(Web3Error::SubmitTransactionError(
                 "exceeds limit for published pubdata".into(),
                 Default::default(),
