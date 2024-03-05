@@ -6,7 +6,7 @@ import {Utils} from "./libraries/Utils.sol";
 import {EfficientCall} from "./libraries/EfficientCall.sol";
 import {ISystemContract} from "./interfaces/ISystemContract.sol";
 import {SystemContractHelper} from "./libraries/SystemContractHelper.sol";
-import {MSG_VALUE_SIMULATOR_IS_SYSTEM_BIT, ETH_TOKEN_SYSTEM_CONTRACT} from "./Constants.sol";
+import {MSG_VALUE_SIMULATOR_IS_SYSTEM_BIT, REAL_ETH_TOKEN_SYSTEM_CONTRACT} from "./Constants.sol";
 
 /**
  * @author Matter Labs
@@ -37,8 +37,8 @@ contract MsgValueSimulator is ISystemContract {
 
     /// @notice The amount of gas that is passed to the MsgValueSimulator as a stipend.
     /// This number servers to pay for the ETH transfer as well as to provide gas for the `GAS_TO_PASS` gas.
-    /// It is equal to the following constant: https://github.com/matter-labs/era-zkevm_opcode_defs/blob/a9b01a0d4081ec0c8a08dd099f4fb2abc60bb395/src/system_params.rs#L82.
-    uint256 constant MSG_VALUE_SIMULATOR_STIPEND_GAS = 75500;
+    /// It is equal to the following constant: https://github.com/matter-labs/era-zkevm_opcode_defs/blob/31dc076e1c60aed8d23c8f121b6f7e913d663d65/src/system_params.rs#L93.
+    uint256 constant MSG_VALUE_SIMULATOR_STIPEND_GAS = 24000;
 
     /// @notice The fallback function that is the main entry point for the MsgValueSimulator.
     /// @dev The contract accepts value, the callee and whether the call should be a system one via its ABI params.
@@ -60,8 +60,8 @@ contract MsgValueSimulator is ISystemContract {
         require(to != address(this), "MsgValueSimulator calls itself");
 
         if (value != 0) {
-            (bool success, ) = address(ETH_TOKEN_SYSTEM_CONTRACT).call(
-                abi.encodeCall(ETH_TOKEN_SYSTEM_CONTRACT.transferFromTo, (msg.sender, to, value))
+            (bool success, ) = address(REAL_ETH_TOKEN_SYSTEM_CONTRACT).call(
+                abi.encodeCall(REAL_ETH_TOKEN_SYSTEM_CONTRACT.transferFromTo, (msg.sender, to, value))
             );
 
             // If the transfer of ETH fails, we do the most Ethereum-like behaviour in such situation: revert(0,0)
