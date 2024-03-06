@@ -42,9 +42,8 @@ use multivm::{
     },
     vm_latest::HistoryDisabled,
     vm_latest::{
-        constants::{BLOCK_GAS_LIMIT},
-        utils::l2_blocks::load_last_l2_block,
-        ToTracerPointer, TracerPointer, Vm,
+        constants::BLOCK_GAS_LIMIT, utils::l2_blocks::load_last_l2_block, ToTracerPointer,
+        TracerPointer, Vm,
     },
 };
 use zksync_basic_types::{
