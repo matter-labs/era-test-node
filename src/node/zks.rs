@@ -548,6 +548,7 @@ mod tests {
             max_priority_fee_per_gas: None,
             value: Some(U256::from(0)),
             data: Some(vec![0, 0].into()),
+            input: Some(vec![0, 0].into()),
             nonce: Some(U256::from(0)),
             transaction_type: None,
             access_list: None,
@@ -556,7 +557,7 @@ mod tests {
 
         let result = node.estimate_fee(mock_request).await.unwrap();
 
-        assert_eq!(result.gas_limit, U256::from(1784965));
+        assert_eq!(result.gas_limit, U256::from(987540));
         assert_eq!(result.max_fee_per_gas, U256::from(100000000));
         assert_eq!(result.max_priority_fee_per_gas, U256::from(0));
         assert_eq!(result.gas_per_pubdata_limit, U256::from(18750));
