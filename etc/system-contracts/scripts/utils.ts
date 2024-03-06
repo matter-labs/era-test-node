@@ -14,6 +14,7 @@ import { getCompilersDir } from "hardhat/internal/util/global-dir";
 import path from "path";
 import { spawn as _spawn } from "child_process";
 import { createHash } from "crypto";
+import { CompilerDownloader } from "hardhat/internal/solidity/compiler/downloader";
 
 export interface Dependency {
   name: string;
@@ -193,6 +194,16 @@ export async function filterPublishedFactoryDeps(
   console.log(`Combined length to deploy: ${currentLength}`);
 
   return [bytecodesToDeploy, currentLength];
+}
+
+export async function getSolcLocation(): Promise<string> {
+  const compilersCache = await getCompilersDir();
+  const compilerPlatform = CompilerDownloader.getCompilerPlatform();
+  const downloader = new CompilerDownloader(compilerPlatform, compilersCache);
+
+  const solcVersion = hre.config.solidity.compilers[0].version;
+
+  return (await downloader.getCompiler(solcVersion))!.compilerPath;
 }
 
 export async function compilerLocation(compilerVersion: string, isCompilerPreRelease: boolean): Promise<string> {

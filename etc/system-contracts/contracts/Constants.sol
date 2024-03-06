@@ -33,6 +33,13 @@ address constant SHA256_SYSTEM_CONTRACT = address(0x02);
 address constant ECADD_SYSTEM_CONTRACT = address(0x06);
 address constant ECMUL_SYSTEM_CONTRACT = address(0x07);
 
+
+/// @dev The number of ergs that need to be spent for a single byte of pubdata regardless of the pubdata price.
+/// This variable is used to ensure the following:
+/// - That the long-term storage of the operator is compensated properly.
+/// - That it is not possible that the pubdata counter grows too high without spending proportional amount of computation.
+uint256 constant COMPUTATIONAL_PRICE_FOR_PUBDATA = 80;
+
 /// @dev The maximal possible address of an L1-like precompie. These precompiles maintain the following properties:
 /// - Their extcodehash is EMPTY_STRING_KECCAK
 /// - Their extcodesize is 0 despite having a bytecode formally deployed there.
@@ -64,6 +71,7 @@ IEthToken constant REAL_ETH_TOKEN_SYSTEM_CONTRACT = IEthToken(address(REAL_SYSTE
 address constant KECCAK256_SYSTEM_CONTRACT = address(0x8010);
 
 ISystemContext constant SYSTEM_CONTEXT_CONTRACT = ISystemContext(payable(address(SYSTEM_CONTRACTS_OFFSET + 0x0b)));
+// ISystemContext constant REAL_SYSTEM_CONTEXT_CONTRACT = ISystemContext(payable(address(SYSTEM_CONTRACTS_OFFSET + 0x0b)));
 
 IBootloaderUtilities constant BOOTLOADER_UTILITIES = IBootloaderUtilities(address(SYSTEM_CONTRACTS_OFFSET + 0x0c));
 
