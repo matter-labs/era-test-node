@@ -83,8 +83,8 @@ pub const TEST_NODE_NETWORK_ID: u32 = 260;
 /// L1 Gas Price.
 pub const L1_GAS_PRICE: u64 = 50_000_000_000;
 // TODO: for now, that's fine, as computation overhead is set to zero, but we may consider using calculated fee input everywhere.
-/// L2 Gas Price (0.1 gwei).
-pub const L2_GAS_PRICE: u64 = 100_000_000;
+/// L2 Gas Price (0.05 gwei).
+pub const L2_GAS_PRICE: u64 = 50_000_000;
 /// L1 Gas Price Scale Factor for gas estimation.
 pub const ESTIMATE_GAS_PRICE_SCALE_FACTOR: f64 = 1.5;
 /// The max possible number of gas that `eth_estimateGas` is allowed to overestimate.
@@ -1894,7 +1894,7 @@ mod tests {
                 gas_limit: U256::from(815563),
                 max_fee_per_gas: U256::from(250_000_000),
                 max_priority_fee_per_gas: U256::from(250_000_000),
-                gas_per_pubdata_limit: U256::from(20000),
+                gas_per_pubdata_limit: U256::from(25000),
             },
             U256::from(0),
             zksync_basic_types::L2ChainId::from(260),
