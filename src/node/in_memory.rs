@@ -42,7 +42,7 @@ use multivm::{
     },
     vm_latest::HistoryDisabled,
     vm_latest::{
-        constants::{BLOCK_GAS_LIMIT, MAX_VM_PUBDATA_PER_BATCH},
+        constants::{BLOCK_GAS_LIMIT},
         utils::l2_blocks::load_last_l2_block,
         ToTracerPointer, TracerPointer, Vm,
     },
@@ -62,12 +62,14 @@ use zksync_types::{
     get_nonce_key,
     l2::L2Tx,
     l2::TransactionType,
+    fee_model::{BatchFeeInput, PubdataIndependentBatchFeeModelInput},
     utils::{decompose_full_nonce, nonces_to_full_nonce, storage_key_for_eth_balance},
     vm_trace::Call,
     PackedEthSignature, StorageKey, StorageLogQueryType, StorageValue, Transaction,
     ACCOUNT_CODE_STORAGE_ADDRESS, MAX_L2_TX_GAS_LIMIT, SYSTEM_CONTEXT_ADDRESS,
     SYSTEM_CONTEXT_BLOCK_INFO_POSITION,
 };
+use zksync_types::fee_model::L1PeggedBatchFeeModelInput;
 use zksync_utils::{
     bytecode::{compress_bytecode, hash_bytecode},
     h256_to_account_address, h256_to_u256, u256_to_h256,
@@ -97,6 +99,8 @@ pub const ESTIMATE_GAS_SCALE_FACTOR: f32 = 1.3;
 pub const MAX_PREVIOUS_STATES: u16 = 128;
 /// The zks protocol version.
 pub const PROTOCOL_VERSION: &str = "zks/1";
+
+pub const MAX_VM_PUBDATA_PER_BATCH_VALIDIUM: u32 = (31 * 4096) * 100; // 100 blobs of pubdata
 
 pub fn compute_hash(block_number: u64, tx_hash: H256) -> H256 {
     let digest = [&block_number.to_be_bytes()[..], tx_hash.as_bytes()].concat();
@@ -369,7 +373,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
             last_l2_block.number as u64,
             latest_timestamp,
         )
-        .new_batch();
+            .new_batch();
 
         let fee_input_provider = self.fee_input_provider.clone();
         let batch_env = L1BatchEnv {
@@ -377,7 +381,12 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
             previous_batch_hash: None,
             number: L1BatchNumber::from(block_ctx.batch),
             timestamp: block_ctx.timestamp,
-            fee_input: block_on(async move { fee_input_provider.get_batch_fee_input().await }),
+            fee_input: BatchFeeInput::PubdataIndependent(
+                PubdataIndependentBatchFeeModelInput {
+                    l1_gas_price: L1_GAS_PRICE,
+                    fair_l2_gas_price: L2_GAS_PRICE,
+                    fair_pubdata_price: 0,
+                }),
             fee_account: H160::zero(),
             enforced_base_fee: None,
             first_l2_block: L2BlockEnv {
@@ -455,8 +464,8 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
         let tx: Transaction = l2_tx.clone().into();
 
         let fee_input_provider = self.fee_input_provider.clone();
-        let fee_input = {
-            let fee_input = block_on(async move {
+        let fee_input: BatchFeeInput = {
+            let mut fee_input = block_on(async move {
                 fee_input_provider
                     .get_batch_fee_input_scaled(
                         ESTIMATE_GAS_PRICE_SCALE_FACTOR,
@@ -467,16 +476,28 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
 
             // In order for execution to pass smoothly, we need to ensure that block's required gasPerPubdata will be
             // <= to the one in the transaction itself.
-            adjust_pubdata_price_for_tx(
+            fee_input = adjust_pubdata_price_for_tx(
                 fee_input,
                 tx.gas_per_pubdata_byte_limit(),
                 None,
                 VmVersion::latest(),
-            )
+            );
+
+            match fee_input {
+                BatchFeeInput::L1Pegged(_) => {
+                    panic!("L1Pegged fee input is not supported for gas estimation");
+                }
+                BatchFeeInput::PubdataIndependent(mut fi) => {
+                    fi.fair_pubdata_price = 0;
+
+                    BatchFeeInput::PubdataIndependent(fi)
+                }
+            }
         };
 
-        let (base_fee, gas_per_pubdata_byte) =
+        let (base_fee, mut gas_per_pubdata_byte) =
             derive_base_fee_and_gas_per_pubdata(fee_input, VmVersion::latest());
+        gas_per_pubdata_byte = 0;
 
         // Properly format signature
         if l2_tx.common_data.signature.is_empty() {
@@ -518,7 +539,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
             })
             .sum::<u32>();
 
-        if pubdata_for_factory_deps > MAX_VM_PUBDATA_PER_BATCH.try_into().unwrap() {
+        if pubdata_for_factory_deps > MAX_VM_PUBDATA_PER_BATCH_VALIDIUM.try_into().unwrap() {
             return Err(into_jsrpc_error(Web3Error::SubmitTransactionError(
                 "exceeds limit for published pubdata".into(),
                 Default::default(),
@@ -721,12 +742,12 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
         // Set gas_limit for transaction
         let gas_limit_with_overhead = tx_gas_limit
             + derive_overhead(
-                tx_gas_limit,
-                gas_per_pubdata_byte as u32,
-                tx.encoding_len(),
-                l2_tx.common_data.transaction_type as u8,
-                VmVersion::latest(),
-            );
+            tx_gas_limit,
+            gas_per_pubdata_byte as u32,
+            tx.encoding_len(),
+            l2_tx.common_data.transaction_type as u8,
+            VmVersion::latest(),
+        );
         l2_tx.common_data.fee.gas_limit = gas_limit_with_overhead.into();
 
         let storage = StorageView::new(fork_storage).into_rc_ptr();
@@ -1361,7 +1382,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
             BootloaderDebugTracer {
                 result: bootloader_debug_result.clone(),
             }
-            .into_tracer_pointer(),
+                .into_tracer_pointer(),
         );
 
         let tx_result = vm.inspect(tracers.into(), VmExecutionMode::OneTx);
@@ -1857,7 +1878,7 @@ mod tests {
             vec![],
             true,
         )
-        .expect("transaction must pass with external storage");
+            .expect("transaction must pass with external storage");
     }
 
     #[tokio::test]
@@ -1902,7 +1923,7 @@ mod tests {
             None,
             Default::default(),
         )
-        .expect("failed signing tx");
+            .expect("failed signing tx");
         tx.common_data.transaction_type = TransactionType::LegacyTransaction;
         tx.set_input(vec![], H256::repeat_byte(0x2));
         let (_, result, ..) = node
