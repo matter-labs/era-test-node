@@ -373,7 +373,7 @@ impl Default for TransactionBuilder {
         Self {
             tx_hash: H256::repeat_byte(0x01),
             from_account_private_key: K256PrivateKey::from_bytes(H256::random()).unwrap(),
-            gas_limit: U256::from(2_000_000),
+            gas_limit: U256::from(4_000_000),
             max_fee_per_gas: U256::from(50_000_000),
             max_priority_fee_per_gas: U256::from(50_000_000),
         }
@@ -414,7 +414,7 @@ impl TransactionBuilder {
                 gas_limit: self.gas_limit,
                 max_fee_per_gas: self.max_fee_per_gas,
                 max_priority_fee_per_gas: self.max_priority_fee_per_gas,
-                gas_per_pubdata_limit: U256::from(25000),
+                gas_per_pubdata_limit: U256::from(50000),
             },
             U256::from(1),
             L2ChainId::from(260),
@@ -512,7 +512,7 @@ pub fn deploy_contract<T: ForkSource + std::fmt::Debug + Clone>(
         data.to_vec(),
         nonce,
         Fee {
-            gas_limit: U256::from(92511299),
+            gas_limit: U256::from(400_000_000),
             max_fee_per_gas: U256::from(50_000_000),
             max_priority_fee_per_gas: U256::from(50_000_000),
             gas_per_pubdata_limit: U256::from(50000),
