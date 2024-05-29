@@ -665,9 +665,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
                 )))
             }
             ExecutionResult::Success { .. } => {
-                let full_gas_limit = match suggested_gas_limit
-                    .overflowing_add(suggested_gas_limit + overhead)
-                {
+                let full_gas_limit = match suggested_gas_limit.overflowing_add(overhead) {
                     (value, false) => value,
                     (_, true) => {
                         tracing::info!("{}", "Overflow when calculating gas estimation. We've exceeded the block gas limit by summing the following values:".red());
@@ -1366,8 +1364,8 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
     ) -> Result<L2TxResult, String> {
         let inner = self
             .inner
-            .write()
-            .map_err(|e| format!("Failed to acquire write lock: {}", e))?;
+            .read()
+            .map_err(|e| format!("Failed to acquire read lock: {}", e))?;
 
         let storage = StorageView::new(inner.fork_storage.clone()).into_rc_ptr();
 
@@ -1438,13 +1436,13 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
                 "Use --show-gas-details flag or call config_setShowGasDetails to display more info"
             ),
             ShowGasDetails::All => {
-                if self
-                    .display_detailed_gas_info(bootloader_debug_result.get(), spent_on_pubdata)
-                    .is_err()
-                {
+                let info =
+                    self.display_detailed_gas_info(bootloader_debug_result.get(), spent_on_pubdata);
+                if info.is_err() {
                     tracing::info!(
-                        "{}",
-                        "!!! FAILED TO GET DETAILED GAS INFO !!!".to_owned().red()
+                        "{}\nError: {}",
+                        "!!! FAILED TO GET DETAILED GAS INFO !!!".to_owned().red(),
+                        info.unwrap_err()
                     );
                 }
             }
