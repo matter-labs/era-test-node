@@ -949,17 +949,26 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
             let mut blocks = HashMap::<H256, Block<TransactionVariant>>::new();
             blocks.insert(f.l2_block.hash, f.l2_block.clone());
 
+            let mut fee_input_provider = if let Some(params) = f.fee_params {
+                TestNodeFeeInputProvider::from_fee_params_and_estimate_scale_factors(
+                    params,
+                    f.estimate_gas_price_scale_factor,
+                    f.estimate_gas_scale_factor,
+                )
+            } else {
+                TestNodeFeeInputProvider::from_estimate_scale_factors(
+                    f.estimate_gas_price_scale_factor,
+                    f.estimate_gas_scale_factor,
+                )
+            };
+            fee_input_provider.l2_gas_price = config.l2_fair_gas_price;
+
             InMemoryNodeInner {
                 current_timestamp: f.block_timestamp,
                 current_batch: f.l1_block.0,
                 current_miniblock: f.l2_miniblock,
                 current_miniblock_hash: f.l2_miniblock_hash,
-                fee_input_provider: TestNodeFeeInputProvider::new(
-                    f.l1_gas_price,
-                    config.l2_fair_gas_price,
-                    f.estimate_gas_price_scale_factor,
-                    f.estimate_gas_scale_factor,
-                ),
+                fee_input_provider,
                 tx_results: Default::default(),
                 blocks,
                 block_hashes,
@@ -993,12 +1002,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
                 current_batch: 0,
                 current_miniblock: 0,
                 current_miniblock_hash: block_hash,
-                fee_input_provider: TestNodeFeeInputProvider::new(
-                    L1_GAS_PRICE,
-                    config.l2_fair_gas_price,
-                    DEFAULT_ESTIMATE_GAS_PRICE_SCALE_FACTOR,
-                    DEFAULT_ESTIMATE_GAS_SCALE_FACTOR,
-                ),
+                fee_input_provider: TestNodeFeeInputProvider::default(),
                 tx_results: Default::default(),
                 blocks,
                 block_hashes,
@@ -1902,6 +1906,7 @@ mod tests {
                 overwrite_chain_id: None,
                 l1_gas_price: 1000,
                 l2_fair_gas_price: DEFAULT_L2_GAS_PRICE,
+                fee_params: None,
                 estimate_gas_price_scale_factor: DEFAULT_ESTIMATE_GAS_PRICE_SCALE_FACTOR,
                 estimate_gas_scale_factor: DEFAULT_ESTIMATE_GAS_SCALE_FACTOR,
             }),
