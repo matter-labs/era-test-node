@@ -1,7 +1,26 @@
 use jsonrpc_derive::rpc;
+use serde::{Deserialize, Serialize};
 use zksync_basic_types::{Address, U256, U64};
 
 use super::RpcResult;
+
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResetRequestForking {
+    pub json_rpc_url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_number: Option<U64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
+pub struct ResetRequest {
+    /// The block number to reset the state to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to: Option<U64>,
+    // Forking to a specified URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forking: Option<ResetRequestForking>,
+}
 
 #[rpc]
 pub trait HardhatNamespaceT {
@@ -45,6 +64,18 @@ pub trait HardhatNamespaceT {
     /// A `BoxFuture` containing a `Result` with a `bool` representing the success of the operation.
     #[rpc(name = "hardhat_mine")]
     fn hardhat_mine(&self, num_blocks: Option<U64>, interval: Option<U64>) -> RpcResult<bool>;
+
+    /// Reset the state of the network back to a fresh forked state, or disable forking.
+    ///
+    /// # Arguments
+    ///
+    /// * `reset_spec` - The requested state, defaults to resetting the current network.
+    ///
+    /// # Returns
+    ///
+    /// A `BoxFuture` containing a `Result` with a `bool` representing the success of the operation.
+    #[rpc(name = "hardhat_reset")]
+    fn reset_network(&self, reset_spec: Option<ResetRequest>) -> RpcResult<bool>;
 
     /// Hardhat Network allows you to send transactions impersonating specific account and contract addresses.
     /// To impersonate an account use this method, passing the address to impersonate as its parameter.

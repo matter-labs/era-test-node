@@ -8,7 +8,8 @@ use zksync_types::{
 use zksync_utils::{h256_to_u256, u256_to_h256};
 
 use crate::{
-    fork::ForkSource,
+    fork::{ForkDetails, ForkSource},
+    namespaces::ResetRequest,
     node::InMemoryNode,
     utils::{self, bytecode_to_factory_dep},
 };
@@ -268,6 +269,53 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> InMemoryNo
             })
     }
 
+    pub fn reset_network(&self, reset_spec: Option<ResetRequest>) -> Result<bool> {
+        let (opt_url, block_number) = if let Some(spec) = reset_spec {
+            if let Some(to) = spec.to {
+                if spec.forking.is_some() {
+                    return Err(anyhow!(
+                        "Only one of 'to' and 'forking' attributes can be specified"
+                    ));
+                }
+                let url = match self.get_fork_url() {
+                    Ok(url) => url,
+                    Err(error) => {
+                        tracing::error!("For returning to past local state, mark it with `evm_snapshot`, then revert to it with `evm_revert`.");
+                        return Err(anyhow!(error.to_string()));
+                    }
+                };
+                (Some(url), Some(to.as_u64()))
+            } else if let Some(forking) = spec.forking {
+                let block_number = forking.block_number.map(|n| n.as_u64());
+                (Some(forking.json_rpc_url), block_number)
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        };
+
+        let fork_details = if let Some(url) = opt_url {
+            let cache_config = self.get_cache_config().map_err(|err| anyhow!(err))?;
+            match ForkDetails::from_url(url, block_number, cache_config) {
+                Ok(fd) => Some(fd),
+                Err(error) => {
+                    return Err(anyhow!(error.to_string()));
+                }
+            }
+        } else {
+            None
+        };
+
+        match self.reset(fork_details) {
+            Ok(()) => {
+                tracing::info!("👷 Network reset");
+                Ok(true)
+            }
+            Err(error) => Err(anyhow!(error.to_string())),
+        }
+    }
+
     pub fn impersonate_account(&self, address: Address) -> Result<bool> {
         self.get_inner()
             .write()
@@ -447,6 +495,23 @@ mod tests {
                 current_block.timestamp
             );
         }
+    }
+
+    #[tokio::test]
+    async fn test_reset() {
+        let address = Address::from_str("0x36615Cf349d7F6344891B1e7CA7C72883F5dc049").unwrap();
+        let node = InMemoryNode::<HttpForkSource>::default();
+
+        let nonce_before = node.get_transaction_count(address, None).await.unwrap();
+
+        let set_result = node.set_nonce(address, U256::from(1337)).unwrap();
+        assert!(set_result);
+
+        let reset_result = node.reset_network(None).unwrap();
+        assert!(reset_result);
+
+        let nonce_after = node.get_transaction_count(address, None).await.unwrap();
+        assert_eq!(nonce_before, nonce_after);
     }
 
     #[tokio::test]

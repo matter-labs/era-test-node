@@ -99,7 +99,7 @@ The `status` options are:
 | `HARDHAT` | `hardhat_getAutomine` | `NOT IMPLEMENTED` | Returns `true` if automatic mining is enabled, and `false` otherwise |
 | `HARDHAT` | `hardhat_metadata` | `NOT IMPLEMENTED` | Returns the metadata of the current network |
 | [`HARDHAT`](#hardhat-namespace) | [`hardhat_mine`](#hardhat_mine) | Mine any number of blocks at once, in constant time |
-| `HARDHAT` | `hardhat_reset` | `NOT IMPLEMENTED` | Resets the state of the network |
+| [`HARDHAT`](#hardhat-namespace) | [`hardhat_reset`] | `PARTIALLY` | Resets the state of the network; cannot revert to past block numbers, unless they're in a fork |
 | [`HARDHAT`](#hardhat-namespace) | [`hardhat_setBalance`](#hardhat_setbalance) | `SUPPORTED` | Modifies the balance of an account |
 | [`HARDHAT`](#hardhat-namespace) | [`hardhat_setCode`](#hardhat_setcode) | `SUPPORTED` | Sets the bytecode of a given account |
 | `HARDHAT` | `hardhat_setCoinbase` | `NOT IMPLEMENTED` | Sets the coinbase address |

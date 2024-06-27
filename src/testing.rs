@@ -11,6 +11,7 @@ use crate::{fork::ForkSource, node::compute_hash};
 
 use ethabi::{ParamType, Token};
 use ethers::contract;
+use eyre::eyre;
 use httptest::{
     matchers::{eq, json_decoded, request},
     responders::json_encoded,
@@ -729,7 +730,11 @@ pub struct ExternalStorage {
     pub raw_storage: InMemoryStorage,
 }
 
-impl ForkSource for &ExternalStorage {
+impl ForkSource for ExternalStorage {
+    fn get_fork_url(&self) -> eyre::Result<String> {
+        Err(eyre!("Not implemented"))
+    }
+
     fn get_storage_at(
         &self,
         address: H160,

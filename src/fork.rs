@@ -6,7 +6,9 @@
 use std::{
     collections::HashMap,
     convert::{TryFrom, TryInto},
+    fmt,
     future::Future,
+    marker::PhantomData,
     str::FromStr,
     sync::{Arc, RwLock},
 };
@@ -109,12 +111,14 @@ pub struct ForkStorageInner<S> {
     pub factory_dep_cache: HashMap<H256, Option<Vec<u8>>>,
     // If set - it hold the necessary information on where to fetch the data.
     // If not set - it will simply read from underlying storage.
-    pub fork: Option<ForkDetails<S>>,
+    pub fork: Option<ForkDetails>,
+    // ForkSource type no longer needed but retained to keep the old interface.
+    pub dummy: PhantomData<S>,
 }
 
 impl<S: ForkSource> ForkStorage<S> {
     pub fn new(
-        fork: Option<ForkDetails<S>>,
+        fork: Option<ForkDetails>,
         system_contracts_options: &system_contracts::Options,
     ) -> Self {
         let chain_id = fork
@@ -133,8 +137,37 @@ impl<S: ForkSource> ForkStorage<S> {
                 value_read_cache: Default::default(),
                 fork,
                 factory_dep_cache: Default::default(),
+                dummy: Default::default(),
             })),
             chain_id,
+        }
+    }
+
+    pub fn get_cache_config(&self) -> Result<CacheConfig, String> {
+        let reader = self
+            .inner
+            .read()
+            .map_err(|e| format!("Failed to acquire read lock: {}", e))?;
+        let cache_config = if let Some(ref fork_details) = reader.fork {
+            fork_details.cache_config.clone()
+        } else {
+            CacheConfig::default()
+        };
+        Ok(cache_config)
+    }
+
+    pub fn get_fork_url(&self) -> Result<String, String> {
+        let reader = self
+            .inner
+            .read()
+            .map_err(|e| format!("Failed to acquire read lock: {}", e))?;
+        if let Some(ref fork_details) = reader.fork {
+            fork_details
+                .fork_source
+                .get_fork_url()
+                .map_err(|e| e.to_string())
+        } else {
+            Err("not forked".to_string())
         }
     }
 
@@ -269,6 +302,9 @@ impl<S> ForkStorage<S> {
 /// forking a remote chain.
 /// The method signatures are similar to methods from ETHNamespace and ZKNamespace.
 pub trait ForkSource {
+    /// Returns the forked URL.
+    fn get_fork_url(&self) -> eyre::Result<String>;
+
     /// Returns the Storage value at a given index for given address.
     fn get_storage_at(
         &self,
@@ -347,11 +383,9 @@ pub trait ForkSource {
 }
 
 /// Holds the information about the original chain.
-/// "S" is the implementation of the ForkSource.
-#[derive(Debug, Clone)]
-pub struct ForkDetails<S> {
-    // Source of the fork data (for example HTTPForkSource)
-    pub fork_source: S,
+pub struct ForkDetails {
+    // Source of the fork data (for example HttpForkSource)
+    pub fork_source: Box<dyn ForkSource + Send + Sync>,
     // Block number at which we forked (the next block to create is l1_block + 1)
     pub l1_block: L1BatchNumber,
     // The actual L2 block
@@ -367,6 +401,7 @@ pub struct ForkDetails<S> {
     /// The factor by which to scale the gasLimit.
     pub estimate_gas_scale_factor: f32,
     pub fee_params: Option<FeeParams>,
+    pub cache_config: CacheConfig,
 }
 
 const SUPPORTED_VERSIONS: &[ProtocolVersionId] = &[
@@ -401,7 +436,22 @@ pub fn supported_versions_to_string() -> String {
     versions.join(", ")
 }
 
-impl ForkDetails<HttpForkSource> {
+impl fmt::Debug for ForkDetails {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ForkDetails")
+            .field("l1_block", &self.l1_block)
+            .field("l2_block", &self.l2_block)
+            .field("l2_miniblock", &self.l2_miniblock)
+            .field("l2_miniblock_hash", &self.l2_miniblock_hash)
+            .field("block_timestamp", &self.block_timestamp)
+            .field("overwrite_chain_id", &self.overwrite_chain_id)
+            .field("l1_gas_price", &self.l1_gas_price)
+            .field("l2_fair_gas_price", &self.l2_fair_gas_price)
+            .finish()
+    }
+}
+
+impl ForkDetails {
     pub async fn from_network_and_miniblock_and_chain(
         network: ForkNetwork,
         client: Client<L2>,
@@ -454,7 +504,7 @@ impl ForkDetails<HttpForkSource> {
         let fee_params = client.get_fee_params().await.ok();
 
         ForkDetails {
-            fork_source: HttpForkSource::new(url.to_owned(), cache_config),
+            fork_source: Box::new(HttpForkSource::new(url.to_owned(), cache_config.clone())),
             l1_block: l1_batch_number,
             l2_block: block,
             block_timestamp: block_details.base.timestamp,
@@ -466,6 +516,7 @@ impl ForkDetails<HttpForkSource> {
             estimate_gas_price_scale_factor,
             estimate_gas_scale_factor,
             fee_params,
+            cache_config,
         }
     }
     /// Create a fork from a given network at a given height.
@@ -509,9 +560,40 @@ impl ForkDetails<HttpForkSource> {
         )
         .await
     }
-}
 
-impl<S: ForkSource> ForkDetails<S> {
+    /// Return URL and HTTP client for `hardhat_reset`.
+    pub fn from_url(
+        url: String,
+        fork_at: Option<u64>,
+        cache_config: CacheConfig,
+    ) -> eyre::Result<Self> {
+        let parsed_url = SensitiveUrl::from_str(&url)?;
+        let builder = match Client::http(parsed_url) {
+            Ok(b) => b,
+            Err(error) => {
+                return Err(eyre::Report::msg(error));
+            }
+        };
+        let client = builder.build();
+
+        block_on(async move {
+            let l2_miniblock = if let Some(fork_at) = fork_at {
+                fork_at
+            } else {
+                client.get_block_number().await?.as_u64()
+            };
+
+            Ok(Self::from_network_and_miniblock_and_chain(
+                ForkNetwork::Other(url),
+                client,
+                l2_miniblock,
+                None,
+                cache_config,
+            )
+            .await)
+        })
+    }
+
     /// Return [`ForkNetwork`] and HTTP client for a given fork name.
     pub fn fork_network_and_client(fork: &str) -> (ForkNetwork, Client<L2>) {
         let network = match fork {
@@ -571,6 +653,7 @@ mod tests {
     use zksync_types::{api::TransactionVariant, StorageKey};
 
     use crate::{
+        cache::CacheConfig,
         deps::InMemoryStorage,
         node::{
             DEFAULT_ESTIMATE_GAS_PRICE_SCALE_FACTOR, DEFAULT_ESTIMATE_GAS_SCALE_FACTOR,
@@ -598,7 +681,7 @@ mod tests {
         let options = system_contracts::Options::default();
 
         let fork_details = ForkDetails {
-            fork_source: &external_storage,
+            fork_source: Box::new(external_storage),
             l1_block: L1BatchNumber(1),
             l2_block: zksync_types::api::Block::<TransactionVariant>::default(),
             l2_miniblock: 1,
@@ -610,9 +693,11 @@ mod tests {
             estimate_gas_price_scale_factor: DEFAULT_ESTIMATE_GAS_PRICE_SCALE_FACTOR,
             estimate_gas_scale_factor: DEFAULT_ESTIMATE_GAS_SCALE_FACTOR,
             fee_params: None,
+            cache_config: CacheConfig::None,
         };
 
-        let mut fork_storage = ForkStorage::new(Some(fork_details), &options);
+        let mut fork_storage: ForkStorage<testing::ExternalStorage> =
+            ForkStorage::new(Some(fork_details), &options);
 
         assert!(fork_storage.is_write_initial(&never_written_key));
         assert!(!fork_storage.is_write_initial(&key_with_some_value));

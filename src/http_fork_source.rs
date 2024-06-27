@@ -47,6 +47,10 @@ impl HttpForkSource {
 }
 
 impl ForkSource for HttpForkSource {
+    fn get_fork_url(&self) -> eyre::Result<String> {
+        Ok(self.fork_url.clone())
+    }
+
     fn get_storage_at(
         &self,
         address: zksync_basic_types::Address,
