@@ -58,7 +58,10 @@ impl Observability {
         log_file: File,
     ) -> Result<Self, anyhow::Error> {
         let joined_filter = binary_names
-            .join(format!("={},", log_level_filter.to_string().to_lowercase()).as_str());
+            .iter()
+            .map(|x| format!("{}={}", x, log_level_filter.to_string().to_lowercase()))
+            .collect::<Vec<String>>()
+            .join(",");
         let filter = Self::parse_filter(&joined_filter)?;
         let (filter, reload_handle) = reload::Layer::new(filter);
 
