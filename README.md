@@ -7,7 +7,7 @@
 
   </div>
 
-# 🚀 zkSync Era In-Memory Node 🚀
+# 🚀 ZKsync Era In-Memory Node 🚀
 
 This crate provides an in-memory node that supports forking the state from other networks.
 
@@ -48,7 +48,7 @@ Please note that `era-test-node` is still in its **alpha** stage. Some features 
 
 ### Using the installation script
 
-1. Download the installation script and mark as executable:
+1. Download the installation script and mark it as executable:
    ```bash
    curl --proto '=https' -sSf https://raw.githubusercontent.com/matter-labs/era-test-node/main/scripts/install.sh > install.sh
    chmod +x install.sh
@@ -139,7 +139,7 @@ era_test_node --cache=none run
 era_test_node --cache=memory run
 ```
 
-Additionally when using `--cache=disk`, the cache directory may be specified via `--cache-dir` and the cache may
+Additionally, when using `--cache=disk`, the cache directory may be specified via `--cache-dir` and the cache may
 be reset on startup via `--reset-cache` parameters.
 ```bash
 era_test_node --cache=disk --cache-dir=/tmp/foo --reset-cache run
@@ -254,7 +254,7 @@ See our list of [Supported APIs here](SUPPORTED_APIS.md).
 
 ## 🤖 CI/CD Testing with GitHub Actions
 
-A GitHub Action is available for integrating `era-test-node` into your CI/CD environments. This action offers high configurability and streamlines the process of testing your applications in an automated way.
+A GitHub Action is available to integrate `era-test-node` into your CI/CD environments. This action offers high configurability and streamlines the process of testing your applications in an automated way.
 
 You can find this GitHub Action in the marketplace [here](https://github.com/marketplace/actions/era-test-node-action).
 
