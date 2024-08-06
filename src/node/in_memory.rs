@@ -57,6 +57,7 @@ use zksync_types::{
     api::{Block, DebugCall, Log, TransactionReceipt, TransactionVariant},
     block::{unpack_block_info, L2BlockHasher},
     fee::Fee,
+    fee_model::{BatchFeeInput, PubdataIndependentBatchFeeModelInput},
     get_nonce_key,
     l2::L2Tx,
     l2::TransactionType,
@@ -284,6 +285,8 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
         &self,
         storage: StoragePtr<ST>,
     ) -> (L1BatchEnv, BlockContext) {
+        tracing::debug!("creating l1 batch env...");
+
         let (last_l1_block_num, last_l1_block_ts) = load_last_l1_batch(storage.clone())
             .map(|(num, ts)| (num as u32, ts))
             .unwrap_or_else(|| (self.current_batch, self.current_timestamp));
@@ -304,18 +307,48 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
         )
         .new_batch();
 
-        let fee_input_provider = self.fee_input_provider.clone();
+        let fee_input: BatchFeeInput;
+
+        if let Some(fork) = &self
+            .fork_storage
+            .inner
+            .read()
+            .expect("fork_storage lock is already held by the current thread")
+            .fork
+        {
+            tracing::debug!(
+                "fork details are present. Updating fee input provider's
+                `l1_gas_price`, `l2_fair_gas_price`, `fair_pubdata_price`
+                for batch {}, that is being created..",
+                block_ctx.batch
+            );
+
+            let (l1_gas_price, fair_l2_gas_price, fair_pubdata_price) = {
+                fork.get_block_gas_details(block_ctx.miniblock as u32)
+                    .unwrap()
+            };
+
+            fee_input = BatchFeeInput::PubdataIndependent(PubdataIndependentBatchFeeModelInput {
+                fair_l2_gas_price,
+                fair_pubdata_price,
+                l1_gas_price,
+            });
+        } else {
+            let fee_input_provider = self.fee_input_provider.clone();
+            fee_input = block_on(async move {
+                fee_input_provider
+                    .get_batch_fee_input_scaled(1.0, 1.0)
+                    .await
+                    .unwrap()
+            });
+        }
+
         let batch_env = L1BatchEnv {
             // TODO: set the previous batch hash properly (take from fork, when forking, and from local storage, when this is not the first block).
             previous_batch_hash: None,
             number: L1BatchNumber::from(block_ctx.batch),
             timestamp: block_ctx.timestamp,
-            fee_input: block_on(async move {
-                fee_input_provider
-                    .get_batch_fee_input_scaled(1.0, 1.0)
-                    .await
-                    .unwrap()
-            }),
+            fee_input,
             fee_account: H160::zero(),
             enforced_base_fee: None,
             first_l2_block: L2BlockEnv {
@@ -1901,7 +1934,7 @@ mod tests {
             U256::from(0),
             zksync_basic_types::L2ChainId::from(260),
             &private_key,
-            None,
+            vec![],
             Default::default(),
         )
         .expect("failed signing tx");

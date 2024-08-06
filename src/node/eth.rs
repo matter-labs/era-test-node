@@ -1409,6 +1409,8 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> EthTestNod
             tx_req.gas = U256::from(MAX_L1_TRANSACTION_GAS_LIMIT);
         }
 
+        tx_req.chain_id = Some(chain_id.as_u64());
+
         // EIP-1559 gas fields should be processed separately
         if tx.gas_price.is_some() {
             if tx.max_fee_per_gas.is_some() || tx.max_priority_fee_per_gas.is_some() {
@@ -1429,7 +1431,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> EthTestNod
         tx_req.s = Some(U256::default());
         tx_req.v = Some(U64::from(27));
 
-        let hash = match tx_req.get_tx_hash(chain_id) {
+        let hash = match tx_req.get_tx_hash() {
             Ok(result) => result,
             Err(e) => {
                 tracing::error!("Transaction request serialization error: {}", e);
@@ -1437,10 +1439,18 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> EthTestNod
                     .boxed();
             }
         };
-        let bytes = tx_req.get_signed_bytes(
-            &PackedEthSignature::from_rsv(&H256::default(), &H256::default(), 27),
-            chain_id,
-        );
+        let bytes = match tx_req.get_signed_bytes(&PackedEthSignature::from_rsv(
+            &H256::default(),
+            &H256::default(),
+            27,
+        )) {
+            Ok(result) => result,
+            Err(e) => {
+                tracing::error!("Transaction request serialization error: {}", e);
+                return futures::future::err(into_jsrpc_error(Web3Error::SerializationError(e)))
+                    .boxed();
+            }
+        };
         let mut l2_tx: L2Tx = match L2Tx::from_request(tx_req, MAX_TX_SIZE) {
             Ok(tx) => tx,
             Err(e) => {
@@ -2990,6 +3000,7 @@ mod tests {
             expected_snapshot.current_miniblock_hash,
             inner.current_miniblock_hash
         );
+
         assert_eq!(
             expected_snapshot.fee_input_provider,
             inner.fee_input_provider

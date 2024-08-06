@@ -644,6 +644,35 @@ impl ForkDetails {
             replay_tx, miniblock
         );
     }
+
+    /// Returns
+    ///
+    /// - `l1_gas_price`
+    /// - `l2_fair_gas_price`
+    /// - `fair_pubdata_price`
+    ///
+    /// for the given l2 block.
+    pub fn get_block_gas_details(&self, miniblock: u32) -> Option<(u64, u64, u64)> {
+        let res_opt_block_details = self.fork_source.get_block_details(L2BlockNumber(miniblock));
+        match res_opt_block_details {
+            Ok(opt_block_details) => opt_block_details.map(|block_details| {
+                (
+                    block_details.base.l1_gas_price,
+                    block_details.base.l2_fair_gas_price,
+                    block_details.base.fair_pubdata_price.unwrap_or_else(|| {
+                        panic!(
+                            "fair pubdata price is not present in {} l2 block details",
+                            miniblock
+                        )
+                    }),
+                )
+            }),
+            Err(e) => {
+                tracing::warn!("Error getting block details: {:?}", e);
+                None
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -705,5 +734,31 @@ mod tests {
         // But writing any value there in the local storage (even 0) - should make it non-initial write immediately.
         fork_storage.set_value(key_with_value_0, H256::zero());
         assert!(!fork_storage.is_write_initial(&key_with_value_0));
+    }
+
+    #[test]
+    fn test_get_block_gas_details() {
+        let fork_details = ForkDetails {
+            fork_source: Box::new(testing::ExternalStorage {
+                raw_storage: InMemoryStorage::default(),
+            }),
+            l1_block: L1BatchNumber(0),
+            l2_block: zksync_types::api::Block::<TransactionVariant>::default(),
+            l2_miniblock: 0,
+            l2_miniblock_hash: H256::zero(),
+            block_timestamp: 0,
+            overwrite_chain_id: None,
+            l1_gas_price: 0,
+            l2_fair_gas_price: 0,
+            estimate_gas_price_scale_factor: 0.0,
+            estimate_gas_scale_factor: 0.0,
+            fee_params: None,
+            cache_config: CacheConfig::None,
+        };
+
+        let actual_result = fork_details.get_block_gas_details(1);
+        let expected_result = Some((123, 234, 345));
+
+        assert_eq!(actual_result, expected_result);
     }
 }

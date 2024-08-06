@@ -387,6 +387,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> ZksNamespa
                         executed_at: None,
                         l1_gas_price: 0,
                         l2_fair_gas_price: reader.fee_input_provider.l2_gas_price,
+                        fair_pubdata_price: Some(reader.fee_input_provider.l1_pubdata_price),
                         base_system_contracts_hashes: reader
                             .system_contracts
                             .baseline_contracts
@@ -803,6 +804,7 @@ mod tests {
                   "executedAt": null,
                   "l1GasPrice": 6156252068u64,
                   "l2FairGasPrice": 50000000u64,
+                  "fairPubdataPrice": 100u64,
                   "baseSystemContractsHashes": {
                     "bootloader": "0x0100089b8a2f2e6a20ba28f02c9e0ed0c13d702932364561a0ea61621f65f0a8",
                     "default_aa": "0x0100067d16a5485875b4249040bf421f53e869337fe118ec747cf40a4c777e5f"
@@ -830,6 +832,7 @@ mod tests {
         assert!(matches!(result.number, L2BlockNumber(16474138)));
         assert_eq!(result.l1_batch_number, L1BatchNumber(270435));
         assert_eq!(result.base.timestamp, 1697405098);
+        assert_eq!(result.base.fair_pubdata_price, Some(100));
     }
 
     #[tokio::test]
