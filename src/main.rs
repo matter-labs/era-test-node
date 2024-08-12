@@ -1,4 +1,5 @@
 use crate::observability::Observability;
+use anyhow::anyhow;
 use clap::Parser;
 use colored::Colorize;
 use config::cli::{Cli, Command};
@@ -211,10 +212,23 @@ async fn main() -> anyhow::Result<()> {
     let fork_details = match command {
         Command::Run => None,
         Command::Fork(fork) => {
-            Some(ForkDetails::from_network(&fork.network, fork.fork_at, config.cache).await)
+            match ForkDetails::from_network(&fork.network, fork.fork_at, config.cache).await {
+                Ok(fd) => Some(fd),
+                Err(error) => {
+                    tracing::error!("cannot fork: {:?}", error);
+                    return Err(anyhow!(error));
+                }
+            }
         }
         Command::ReplayTx(replay_tx) => {
-            Some(ForkDetails::from_network_tx(&replay_tx.network, replay_tx.tx, config.cache).await)
+            match ForkDetails::from_network_tx(&replay_tx.network, replay_tx.tx, config.cache).await
+            {
+                Ok(fd) => Some(fd),
+                Err(error) => {
+                    tracing::error!("cannot replay: {:?}", error);
+                    return Err(anyhow!(error));
+                }
+            }
         }
     };
 
