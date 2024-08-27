@@ -56,13 +56,13 @@ describe("evm_setNextBlockTimestamp", function () {
     const userWallet = Wallet.createRandom().connect(provider);
 
     // Act
-    await provider.send("evm_setNextBlockTimestamp", [expectedTimestamp]);
+    await provider.send("evm_setNextBlockTimestamp", [expectedTimestamp.toString(16)]);
 
     await wallet.sendTransaction({
       to: userWallet.address,
       value: ethers.utils.parseEther("0.1"),
     });
-    expectedTimestamp += 2; // New transaction will add two blocks
+    expectedTimestamp += 1; // After executing a transaction, the node puts it into a block and increases its current timestamp
 
     // Assert
     const newBlockTimestamp = (await provider.getBlock("latest")).timestamp;

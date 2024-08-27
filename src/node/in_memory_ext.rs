@@ -50,19 +50,20 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> InMemoryNo
     ///
     /// # Returns
     /// The new timestamp value for the InMemoryNodeInner.
-    pub fn set_next_block_timestamp(&self, timestamp: u64) -> Result<u64> {
+    pub fn set_next_block_timestamp(&self, timestamp: U64) -> Result<U64> {
         self.get_inner()
             .write()
             .map_err(|err| anyhow!("failed acquiring lock: {:?}", err))
             .and_then(|mut writer| {
-                if timestamp < writer.current_timestamp {
+                let ts = timestamp.as_u64();
+                if ts <= writer.current_timestamp {
                     Err(anyhow!(
                         "timestamp ({}) must be greater than current timestamp ({})",
-                        timestamp,
+                        ts,
                         writer.current_timestamp
                     ))
                 } else {
-                    writer.current_timestamp = timestamp;
+                    writer.current_timestamp = ts - 1;
                     Ok(timestamp)
                 }
             })
@@ -746,7 +747,7 @@ mod tests {
         let expected_response = new_timestamp;
 
         let actual_response = node
-            .set_next_block_timestamp(new_timestamp)
+            .set_next_block_timestamp(new_timestamp.into())
             .expect("failed setting timestamp");
         let timestamp_after = node
             .get_inner()
@@ -754,9 +755,14 @@ mod tests {
             .map(|inner| inner.current_timestamp)
             .expect("failed reading timestamp");
 
-        assert_eq!(expected_response, actual_response, "erroneous response");
         assert_eq!(
-            new_timestamp, timestamp_after,
+            expected_response,
+            actual_response.as_u64(),
+            "erroneous response"
+        );
+        assert_eq!(
+            new_timestamp,
+            timestamp_after + 1,
             "timestamp was not set correctly",
         );
     }
@@ -772,10 +778,10 @@ mod tests {
             .expect("failed reading timestamp");
 
         let new_timestamp = timestamp_before + 500;
-        node.set_next_block_timestamp(new_timestamp)
+        node.set_next_block_timestamp(new_timestamp.into())
             .expect("failed setting timestamp");
 
-        let result = node.set_next_block_timestamp(timestamp_before);
+        let result = node.set_next_block_timestamp(timestamp_before.into());
 
         assert!(result.is_err(), "expected an error for timestamp in past");
     }
@@ -791,18 +797,15 @@ mod tests {
             .map(|inner| inner.current_timestamp)
             .expect("failed reading timestamp");
         assert_eq!(timestamp_before, new_timestamp, "timestamps must be same");
-        let expected_response = new_timestamp;
 
-        let actual_response = node
-            .set_next_block_timestamp(new_timestamp)
-            .expect("failed setting timestamp");
+        let response = node.set_next_block_timestamp(new_timestamp.into());
+        assert!(response.is_err());
+
         let timestamp_after = node
             .get_inner()
             .read()
             .map(|inner| inner.current_timestamp)
             .expect("failed reading timestamp");
-
-        assert_eq!(expected_response, actual_response, "erroneous response");
         assert_eq!(
             timestamp_before, timestamp_after,
             "timestamp must not change",
