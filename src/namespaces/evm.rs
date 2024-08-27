@@ -1,5 +1,5 @@
 use jsonrpc_derive::rpc;
-use zksync_basic_types::U64;
+use zksync_basic_types::{Address, U256, U64};
 
 use crate::namespaces::RpcResult;
 
@@ -14,6 +14,19 @@ pub trait EvmNamespaceT {
     /// The applied time delta to `current_timestamp` value for the InMemoryNodeInner.
     #[rpc(name = "evm_increaseTime")]
     fn increase_time(&self, time_delta_seconds: u64) -> RpcResult<u64>;
+
+    /// Modifies an account's nonce by overwriting it.
+    ///
+    /// # Arguments
+    ///
+    /// * `address` - The `Address` whose nonce is to be changed
+    /// * `nonce` - The new nonce
+    ///
+    /// # Returns
+    ///
+    /// A `BoxFuture` containing a `Result` with a `bool` representing the success of the operation.
+    #[rpc(name = "evm_setAccountNonce")]
+    fn set_nonce(&self, address: Address, balance: U256) -> RpcResult<bool>;
 
     /// Force a single block to be mined.
     ///

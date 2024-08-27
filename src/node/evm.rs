@@ -1,4 +1,4 @@
-use zksync_basic_types::U64;
+use zksync_basic_types::{Address, U256, U64};
 use zksync_web3_decl::error::Web3Error;
 
 use crate::{
@@ -15,6 +15,15 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> EvmNamespa
         self.increase_time(time_delta_seconds)
             .map_err(|err| {
                 tracing::error!("failed increasing time: {:?}", err);
+                into_jsrpc_error(Web3Error::InternalError(err))
+            })
+            .into_boxed_future()
+    }
+
+    fn set_nonce(&self, address: Address, balance: U256) -> RpcResult<bool> {
+        self.set_nonce(address, balance)
+            .map_err(|err| {
+                tracing::error!("failed setting nonce: {:?}", err);
                 into_jsrpc_error(Web3Error::InternalError(err))
             })
             .into_boxed_future()
