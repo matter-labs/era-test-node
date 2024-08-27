@@ -168,6 +168,22 @@ describe("hardhat_setCode", function () {
   });
 });
 
+describe("hardhat_reset", function () {
+  it("should return the correct block number after a hardhat_reset", async function () {
+    const oldBlockNumber = await provider.send("eth_blockNumber", []);
+
+    await provider.send("evm_mine", []);
+    await provider.send("evm_mine", []);
+
+    const blockNumber = await provider.send("eth_blockNumber", []);
+    expect(BigNumber.from(blockNumber).toNumber()).to.be.eq(BigNumber.from(oldBlockNumber).toNumber() + 2);
+
+    await provider.send("hardhat_reset", []);
+    const newBlockNumber = await provider.send("eth_blockNumber", []);
+    expect(BigNumber.from(newBlockNumber).toNumber()).to.be.eq(0);
+  });
+});
+
 describe("hardhat_setStorageAt", function () {
   it("Should set storage at an address", async function () {
     const wallet = new Wallet(RichAccounts[0].PrivateKey, provider);
