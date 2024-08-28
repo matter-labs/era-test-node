@@ -42,9 +42,8 @@ use multivm::{
     },
     vm_latest::HistoryDisabled,
     vm_latest::{
-        constants::{BATCH_GAS_LIMIT, MAX_VM_PUBDATA_PER_BATCH},
-        utils::l2_blocks::load_last_l2_block,
-        ToTracerPointer, TracerPointer, Vm,
+        constants::MAX_VM_PUBDATA_PER_BATCH, utils::l2_blocks::load_last_l2_block, ToTracerPointer,
+        TracerPointer, Vm,
     },
 };
 use std::convert::TryInto;
@@ -95,6 +94,7 @@ pub fn create_empty_block<TX>(
     timestamp: u64,
     batch: u32,
     parent_block_hash: Option<H256>,
+    batch_gas_limit: u64,
 ) -> Block<TX> {
     let hash = compute_hash(block_number, H256::zero());
     let parent_hash = parent_block_hash.unwrap_or(if block_number == 0 {
@@ -110,7 +110,7 @@ pub fn create_empty_block<TX>(
         l1_batch_number: Some(U64::from(batch)),
         transactions: vec![],
         gas_used: U256::from(0),
-        gas_limit: U256::from(BATCH_GAS_LIMIT),
+        gas_limit: U256::from(batch_gas_limit),
         ..Default::default()
     }
 }
@@ -251,7 +251,13 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
             let mut blocks = HashMap::<H256, Block<TransactionVariant>>::new();
             blocks.insert(
                 block_hash,
-                create_empty_block(0, NON_FORK_FIRST_BLOCK_TIMESTAMP, 0, None),
+                create_empty_block(
+                    0,
+                    NON_FORK_FIRST_BLOCK_TIMESTAMP,
+                    0,
+                    None,
+                    config.batch_gas_limit,
+                ),
             );
 
             let fee_input_provider =
@@ -506,7 +512,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
             let result = InMemoryNodeInner::estimate_gas_step(
                 l2_tx.clone(),
                 gas_per_pubdata_byte,
-                BATCH_GAS_LIMIT,
+                self.config.batch_gas_limit,
                 batch_env.clone(),
                 system_env.clone(),
                 &self.fork_storage,
@@ -1480,7 +1486,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
             l1_batch_number: Some(U64::from(batch_env.number.0)),
             transactions: vec![TransactionVariant::Full(transaction)],
             gas_used: U256::from(tx_result.statistics.gas_used),
-            gas_limit: U256::from(BATCH_GAS_LIMIT),
+            gas_limit: U256::from(inner.config.batch_gas_limit),
             ..Default::default()
         };
 
@@ -1655,6 +1661,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
             block_ctx.timestamp,
             block_ctx.batch,
             Some(parent_block_hash),
+            inner.config.batch_gas_limit,
         );
 
         inner.current_batch = inner.current_batch.saturating_add(1);
@@ -1771,6 +1778,7 @@ pub fn load_last_l1_batch<S: ReadStorage>(storage: StoragePtr<S>) -> Option<(u64
 #[cfg(test)]
 mod tests {
     use ethabi::{Token, Uint};
+    use multivm::vm_latest::constants::BATCH_GAS_LIMIT;
     use zksync_basic_types::Nonce;
     use zksync_types::{utils::deployed_address_create, K256PrivateKey};
 
@@ -1836,7 +1844,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_empty_block_creates_genesis_block_with_hash_and_zero_parent_hash() {
-        let first_block = create_empty_block::<TransactionVariant>(0, 1000, 1, None);
+        let first_block =
+            create_empty_block::<TransactionVariant>(0, 1000, 1, None, BATCH_GAS_LIMIT);
 
         assert_eq!(first_block.hash, compute_hash(0, H256::zero()));
         assert_eq!(first_block.parent_hash, H256::zero());
@@ -1844,8 +1853,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_empty_block_creates_block_with_parent_hash_link_to_prev_block() {
-        let first_block = create_empty_block::<TransactionVariant>(0, 1000, 1, None);
-        let second_block = create_empty_block::<TransactionVariant>(1, 1000, 1, None);
+        let first_block =
+            create_empty_block::<TransactionVariant>(0, 1000, 1, None, BATCH_GAS_LIMIT);
+        let second_block =
+            create_empty_block::<TransactionVariant>(1, 1000, 1, None, BATCH_GAS_LIMIT);
 
         assert_eq!(second_block.parent_hash, first_block.hash);
     }
@@ -1857,9 +1868,15 @@ mod tests {
             1000,
             1,
             Some(compute_hash(123, H256::zero())),
+            BATCH_GAS_LIMIT,
         );
-        let second_block =
-            create_empty_block::<TransactionVariant>(1, 1000, 1, Some(first_block.hash));
+        let second_block = create_empty_block::<TransactionVariant>(
+            1,
+            1000,
+            1,
+            Some(first_block.hash),
+            BATCH_GAS_LIMIT,
+        );
 
         assert_eq!(first_block.parent_hash, compute_hash(123, H256::zero()));
         assert_eq!(second_block.parent_hash, first_block.hash);

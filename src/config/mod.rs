@@ -119,6 +119,7 @@ impl TestNodeConfig {
 
 pub mod node {
     use clap::Parser;
+    use multivm::vm_latest::constants::BATCH_GAS_LIMIT;
     use serde::Deserialize;
     use std::{fmt::Display, str::FromStr};
 
@@ -134,6 +135,7 @@ pub mod node {
         pub show_gas_details: ShowGasDetails,
         pub resolve_hashes: bool,
         pub system_contracts_options: system_contracts::Options,
+        pub batch_gas_limit: u64,
     }
 
     impl Default for InMemoryNodeConfig {
@@ -147,6 +149,7 @@ pub mod node {
                 show_gas_details: Default::default(),
                 resolve_hashes: Default::default(),
                 system_contracts_options: Default::default(),
+                batch_gas_limit: BATCH_GAS_LIMIT,
             }
         }
     }

@@ -188,6 +188,18 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> InMemoryNo
             })
     }
 
+    pub fn set_block_gas_limit(&self, gas_limit: U64) -> Result<bool> {
+        self.get_inner()
+            .write()
+            .map_err(|err| anyhow!("failed acquiring lock: {:?}", err))
+            .map(|mut writer| {
+                let gas_limit = gas_limit.as_u64();
+                let same = writer.config.batch_gas_limit == gas_limit;
+                writer.config.batch_gas_limit = gas_limit;
+                !same
+            })
+    }
+
     pub fn set_balance(&self, address: Address, balance: U256) -> Result<bool> {
         self.get_inner()
             .write()

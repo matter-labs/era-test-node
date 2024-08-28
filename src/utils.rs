@@ -155,6 +155,7 @@ pub fn mine_empty_blocks<S: std::fmt::Debug + ForkSource>(
             block_ctx.timestamp,
             block_ctx.batch,
             None,
+            node.config.batch_gas_limit,
         );
 
         node.block_hashes.insert(block.number.as_u64(), block.hash);

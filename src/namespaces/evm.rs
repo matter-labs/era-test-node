@@ -80,4 +80,14 @@ pub trait EvmNamespaceT {
     /// `true` if a snapshot was reverted, otherwise `false`.
     #[rpc(name = "evm_revert")]
     fn revert_snapshot(&self, snapshot_id: U64) -> RpcResult<bool>;
+
+    /// Set the block gas limit for the following blocks.
+    ///
+    /// # Parameters
+    /// - `gas_limit`: The new gas limit.
+    ///
+    /// # Returns
+    /// `true` if the gas limit changed, `false` if the parameter was the same as the existing gas limit.
+    #[rpc(name = "evm_setBlockGasLimit")]
+    fn set_block_gas_limit(&self, gas_limit: U64) -> RpcResult<bool>;
 }

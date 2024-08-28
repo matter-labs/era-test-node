@@ -73,4 +73,13 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> EvmNamespa
             })
             .into_boxed_future()
     }
+
+    fn set_block_gas_limit(&self, gas_limit: U64) -> RpcResult<bool> {
+        self.set_block_gas_limit(gas_limit)
+            .map_err(|err| {
+                tracing::error!("failed setting gas limit: {:?}", err);
+                into_jsrpc_error(Web3Error::InternalError(err))
+            })
+            .into_boxed_future()
+    }
 }

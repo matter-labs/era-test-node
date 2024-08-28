@@ -96,7 +96,7 @@ The `status` options are:
 | [`EVM`](#evm-namespace) | [`evm_setAccountNonce`](#evm_setaccountnonce) | `SUPPORTED` | Sets the given account's nonce to the specified value |
 | `EVM` | `evm_setAccountStorageAt` | `NOT IMPLEMENTED` | Sets the given account's storage slot to the specified data |
 | `EVM` | `evm_setAutomine` | `NOT IMPLEMENTED` | Enables or disables the automatic mining of new blocks with each new transaction submitted to the network |
-| `EVM` | `evm_setBlockGasLimit` | `NOT IMPLEMENTED` | Sets the Block Gas Limit of the network |
+| `EVM` | [`evm_setBlockGasLimit`](#evm_setblockgaslimit) | `SUPPORTED` | Sets the block gas limit for the following blocks |
 | `EVM` | `evm_setIntervalMining` | `NOT IMPLEMENTED` | Enables (with a numeric argument greater than 0) or disables (with a numeric argument equal to 0), the automatic mining of blocks at a regular interval of milliseconds, each of which will include all pending transactions |
 | [`EVM`](#evm-namespace) | [`evm_setNextBlockTimestamp`](#evm_setnextblocktimestamp) | `SUPPORTED` | Works like `evm_increaseTime`, but takes the exact timestamp that you want in the next block, and increases the time accordingly |
 | [`EVM`](#evm-namespace) | [`evm_setTime`](#evm_settime) | `SUPPORTED` | Sets the internal clock time to the given timestamp |
@@ -1820,6 +1820,29 @@ curl --request POST \
   --url http://localhost:8011/ \
   --header 'content-type: application/json' \
   --data '{"jsonrpc": "2.0","id": "1","method": "evm_revert","params": ["0x1"]}'
+```
+
+### `evm_setBlockGasLimit`
+
+[source](src/node/evm.rs)
+
+Sets the block gas limit for the following blocks
+
+#### Arguments
+
++ `gas_limit: U64`
+
+#### Status
+
+`SUPPORTED`
+
+#### Example
+
+```bash
+curl --request POST \
+  --url http://localhost:8011/ \
+  --header 'content-type: application/json' \
+  --data '{"jsonrpc": "2.0","id": "1","method": "evm_setBlockGasLimit","params": ["0x1000000000000"]}'
 ```
 
 ## `WEB3 NAMESPACE`
