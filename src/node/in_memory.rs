@@ -12,7 +12,10 @@ use crate::{
     filters::EthFilters,
     fork::{block_on, ForkDetails, ForkSource, ForkStorage},
     formatter,
-    node::{fee_model::TestNodeFeeInputProvider, storage_logs::print_storage_logs_details},
+    node::{
+        call_error_tracer::CallErrorTracer, fee_model::TestNodeFeeInputProvider,
+        storage_logs::print_storage_logs_details,
+    },
     observability::Observability,
     system_contracts::{self, SystemContracts},
     utils::{bytecode_to_factory_dep, create_debug_output, into_jsrpc_error, to_human_size},
@@ -1036,9 +1039,11 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
 
         let call_tracer_result = Arc::new(OnceCell::default());
 
-        let custom_tracer = CallTracer::new(call_tracer_result.clone()).into_tracer_pointer();
-
-        let tx_result = vm.inspect(&mut custom_tracer.into(), VmExecutionMode::OneTx);
+        let tracers = vec![
+            CallErrorTracer::new().into_tracer_pointer(),
+            CallTracer::new(call_tracer_result.clone()).into_tracer_pointer(),
+        ];
+        let tx_result = vm.inspect(&mut tracers.into(), VmExecutionMode::OneTx);
 
         let call_traces = Arc::try_unwrap(call_tracer_result)
             .unwrap()
@@ -1345,6 +1350,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         let call_tracer_result = Arc::new(OnceCell::default());
         let bootloader_debug_result = Arc::new(OnceCell::default());
 
+        tracers.push(CallErrorTracer::new().into_tracer_pointer());
         tracers.push(CallTracer::new(call_tracer_result.clone()).into_tracer_pointer());
         tracers.push(
             BootloaderDebugTracer {
