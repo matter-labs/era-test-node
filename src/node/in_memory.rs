@@ -66,14 +66,17 @@ use zksync_types::{
     fee::Fee,
     fee_model::{BatchFeeInput, PubdataIndependentBatchFeeModelInput},
     get_code_key, get_nonce_key,
+    l1::{OpProcessingType, PriorityQueueType},
     l2::{L2Tx, TransactionType},
     utils::{decompose_full_nonce, nonces_to_full_nonce, storage_key_for_eth_balance},
-    L2ChainId, PackedEthSignature, StorageKey, StorageValue, Transaction,
-    ACCOUNT_CODE_STORAGE_ADDRESS, MAX_L2_TX_GAS_LIMIT, SYSTEM_CONTEXT_ADDRESS,
-    SYSTEM_CONTEXT_BLOCK_INFO_POSITION,
+    Execute, ExecuteTransactionCommon, L1TxCommonData, L2ChainId, Nonce, PackedEthSignature,
+    PriorityOpId, StorageKey, StorageValue, Transaction, ACCOUNT_CODE_STORAGE_ADDRESS,
+    MAX_L2_TX_GAS_LIMIT, SYSTEM_CONTEXT_ADDRESS, SYSTEM_CONTEXT_BLOCK_INFO_POSITION,
 };
 use zksync_utils::{bytecode::hash_bytecode, h256_to_account_address, h256_to_u256, u256_to_h256};
 use zksync_web3_decl::error::Web3Error;
+
+use super::interop::InteropMessage;
 
 /// Max possible size of an ABI encoded tx (in bytes).
 pub const MAX_TX_SIZE: usize = 1_000_000;
@@ -1732,6 +1735,502 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         Ok(())
     }
 
+    fn api_tx_from_tx(tx: Transaction) -> zksync_types::api::Transaction {
+        let nonce = match &tx.common_data {
+            zksync_types::ExecuteTransactionCommon::L1(_) => 0,
+            zksync_types::ExecuteTransactionCommon::L2(l2_tx_common_data) => {
+                l2_tx_common_data.nonce.0
+            }
+            zksync_types::ExecuteTransactionCommon::ProtocolUpgrade(_) => todo!(),
+        };
+        let chain_id = match &tx.common_data {
+            // FIXME
+            zksync_types::ExecuteTransactionCommon::L1(_) => 123,
+            zksync_types::ExecuteTransactionCommon::L2(l2_tx_common_data) => {
+                l2_tx_common_data.extract_chain_id().unwrap_or_default()
+            }
+            zksync_types::ExecuteTransactionCommon::ProtocolUpgrade(_) => todo!(),
+        };
+        let from = match &tx.common_data {
+            // FIXME
+            zksync_types::ExecuteTransactionCommon::L1(_) => None,
+            zksync_types::ExecuteTransactionCommon::L2(l2_tx_common_data) => {
+                Some(l2_tx_common_data.initiator_address)
+            }
+            zksync_types::ExecuteTransactionCommon::ProtocolUpgrade(_) => todo!(),
+        };
+
+        let tx_type = match &tx.common_data {
+            zksync_types::ExecuteTransactionCommon::L1(_) => TransactionType::PriorityOpTransaction,
+            zksync_types::ExecuteTransactionCommon::L2(l2_tx_common_data) => {
+                l2_tx_common_data.transaction_type
+            }
+            zksync_types::ExecuteTransactionCommon::ProtocolUpgrade(_) => todo!(),
+        };
+
+        let fee = match &tx.common_data {
+            // FIXME
+            zksync_types::ExecuteTransactionCommon::L1(l1_tx_common_data) => &Fee {
+                gas_limit: l1_tx_common_data.gas_limit,
+                max_fee_per_gas: l1_tx_common_data.max_fee_per_gas,
+                max_priority_fee_per_gas: l1_tx_common_data.max_fee_per_gas,
+                gas_per_pubdata_limit: l1_tx_common_data.gas_per_pubdata_limit,
+            },
+            zksync_types::ExecuteTransactionCommon::L2(l2_tx_common_data) => &l2_tx_common_data.fee,
+            zksync_types::ExecuteTransactionCommon::ProtocolUpgrade(_) => todo!(),
+        };
+
+        let (v, r, s) = match &tx.common_data {
+            zksync_types::ExecuteTransactionCommon::L1(_) => (None, None, None),
+            zksync_types::ExecuteTransactionCommon::L2(l2_tx_common_data) => {
+                if let Ok(sig) =
+                    PackedEthSignature::deserialize_packed(&l2_tx_common_data.signature)
+                {
+                    (
+                        Some(U64::from(sig.v())),
+                        Some(U256::from(sig.r())),
+                        Some(U256::from(sig.s())),
+                    )
+                } else {
+                    (None, None, None)
+                }
+            }
+            zksync_types::ExecuteTransactionCommon::ProtocolUpgrade(_) => todo!(),
+        };
+
+        zksync_types::api::Transaction {
+            hash: tx.hash(),
+            chain_id: U256::from(chain_id),
+            nonce: U256::from(nonce),
+            from: from,
+            to: tx.recipient_account(),
+            value: tx.execute.value,
+            gas_price: Some(fee.max_fee_per_gas),
+            max_priority_fee_per_gas: Some(fee.max_priority_fee_per_gas),
+            max_fee_per_gas: Some(fee.max_fee_per_gas),
+            gas: fee.gas_limit,
+            input: Bytes(tx.execute.calldata),
+            v,
+            r,
+            s,
+            transaction_type: if tx_type as u32 == 0 {
+                None
+            } else {
+                Some(U64::from(tx_type as u32))
+            },
+            ..Default::default()
+        }
+    }
+
+    pub fn run_l1_tx_raw(
+        &self,
+        tx: Transaction,
+        execution_mode: TxExecutionMode,
+        mut tracers: Vec<
+            TracerPointer<StorageView<ForkStorage<S>>, zksync_multivm::vm_latest::HistoryDisabled>,
+        >,
+        execute_bootloader: bool,
+    ) -> Result<L2TxResult, String> {
+        let inner = self
+            .inner
+            .read()
+            .map_err(|e| format!("Failed to acquire read lock: {}", e))?;
+
+        let storage = StorageView::new(inner.fork_storage.clone()).into_rc_ptr();
+
+        let (batch_env, block_ctx) = inner.create_l1_batch_env(storage.clone());
+
+        let bootloader_code = {
+            /*if inner
+                .impersonated_accounts
+                .contains(&tx.common_data.initiator_address)
+            {
+                tracing::info!(
+                    "🕵️ Executing tx from impersonated account {:?}",
+                    tx.common_data.initiator_address
+                );
+                inner.system_contracts.contracts(execution_mode, true)
+            } else {*/
+            inner.system_contracts.contracts(execution_mode, false)
+            //}
+        };
+        let system_env = inner.create_system_env(bootloader_code.clone(), execution_mode);
+
+        let mut vm: Vm<_, HistoryDisabled> =
+            Vm::new(batch_env.clone(), system_env, storage.clone());
+
+        //let tx: Transaction = l2_tx.clone().into();
+
+        let call_tracer_result = Arc::new(OnceCell::default());
+        let bootloader_debug_result = Arc::new(OnceCell::default());
+
+        tracers.push(CallErrorTracer::new().into_tracer_pointer());
+        tracers.push(CallTracer::new(call_tracer_result.clone()).into_tracer_pointer());
+        tracers.push(
+            BootloaderDebugTracer {
+                result: bootloader_debug_result.clone(),
+            }
+            .into_tracer_pointer(),
+        );
+
+        let (compressed_bytecodes, tx_result) =
+            vm.inspect_transaction_with_bytecode_compression(&mut tracers.into(), tx.clone(), true);
+        let compressed_bytecodes =
+            compressed_bytecodes.map_err(|err| format!("failed compressing bytecodes: {err:?}"))?;
+
+        let call_traces = call_tracer_result.get().unwrap();
+
+        let spent_on_pubdata =
+            tx_result.statistics.gas_used - tx_result.statistics.computational_gas_used as u64;
+
+        tracing::info!("┌─────────────────────────┐");
+        tracing::info!("│   TRANSACTION SUMMARY   │");
+        tracing::info!("└─────────────────────────┘");
+
+        match &tx_result.result {
+            ExecutionResult::Success { .. } => tracing::info!("Transaction: {}", "SUCCESS".green()),
+            ExecutionResult::Revert { .. } => tracing::info!("Transaction: {}", "FAILED".red()),
+            ExecutionResult::Halt { .. } => tracing::info!("Transaction: {}", "HALTED".red()),
+        }
+
+        tracing::info!("Initiator: {:?}", tx.initiator_account());
+        tracing::info!("Payer: {:?}", tx.payer());
+        tracing::info!(
+            "Gas - Limit: {} | Used: {} | Refunded: {}",
+            to_human_size(tx.gas_limit()),
+            to_human_size(tx.gas_limit() - tx_result.refunds.gas_refunded),
+            to_human_size(tx_result.refunds.gas_refunded.into())
+        );
+
+        match inner.config.show_gas_details {
+            ShowGasDetails::None => tracing::info!(
+                "Use --show-gas-details flag or call config_setShowGasDetails to display more info"
+            ),
+            ShowGasDetails::All => {
+                let info =
+                    self.display_detailed_gas_info(bootloader_debug_result.get(), spent_on_pubdata);
+                if info.is_err() {
+                    tracing::info!(
+                        "{}\nError: {}",
+                        "!!! FAILED TO GET DETAILED GAS INFO !!!".to_owned().red(),
+                        info.unwrap_err()
+                    );
+                }
+            }
+        }
+
+        if inner.config.show_storage_logs != ShowStorageLogs::None {
+            print_storage_logs_details(&inner.config.show_storage_logs, &tx_result);
+        }
+
+        if inner.config.show_vm_details != ShowVMDetails::None {
+            formatter::print_vm_details(&tx_result);
+        }
+
+        tracing::info!("");
+        tracing::info!("==== Console logs: ");
+        for call in call_traces {
+            inner.console_log_handler.handle_call_recursive(call);
+        }
+        tracing::info!("");
+        let call_traces_count = if !call_traces.is_empty() {
+            // All calls/sub-calls are stored within the first call trace
+            call_traces[0].calls.len()
+        } else {
+            0
+        };
+        tracing::info!(
+            "==== {} Use --show-calls flag or call config_setShowCalls to display more info.",
+            format!("{:?} call traces. ", call_traces_count).bold()
+        );
+
+        if inner.config.show_calls != ShowCalls::None {
+            for call in call_traces {
+                formatter::print_call(
+                    call,
+                    0,
+                    &inner.config.show_calls,
+                    inner.config.show_outputs,
+                    inner.config.resolve_hashes,
+                );
+            }
+        }
+        tracing::info!("");
+        tracing::info!(
+            "==== {}",
+            format!("{} events", tx_result.logs.events.len()).bold()
+        );
+        for event in &tx_result.logs.events {
+            formatter::print_event(event, inner.config.resolve_hashes);
+        }
+
+        // The computed block hash here will be different than that in production.
+        let hash = compute_hash(block_ctx.miniblock, tx.hash());
+
+        let mut transaction = Self::api_tx_from_tx(tx);
+        transaction.block_hash = Some(inner.current_miniblock_hash);
+        transaction.block_number = Some(U64::from(inner.current_miniblock));
+
+        let parent_block_hash = inner
+            .block_hashes
+            .get(&(block_ctx.miniblock - 1))
+            .cloned()
+            .unwrap_or_default();
+
+        let block = Block {
+            hash,
+            parent_hash: parent_block_hash,
+            number: U64::from(block_ctx.miniblock),
+            timestamp: U256::from(batch_env.timestamp),
+            l1_batch_number: Some(U64::from(batch_env.number.0)),
+            transactions: vec![TransactionVariant::Full(transaction)],
+            gas_used: U256::from(tx_result.statistics.gas_used),
+            gas_limit: U256::from(BATCH_GAS_LIMIT),
+            ..Default::default()
+        };
+
+        let mut bytecodes = HashMap::new();
+        for b in compressed_bytecodes.iter() {
+            let hashcode = match bytecode_to_factory_dep(b.original.clone()) {
+                Ok(hc) => hc,
+                Err(error) => {
+                    tracing::error!("{}", format!("cannot convert bytecode: {}", error).on_red());
+                    return Err(error.to_string());
+                }
+            };
+            bytecodes.insert(hashcode.0, hashcode.1);
+        }
+        if execute_bootloader {
+            vm.execute(VmExecutionMode::Bootloader);
+        }
+
+        let modified_keys = storage.borrow().modified_storage_keys().clone();
+
+        Ok((
+            modified_keys,
+            tx_result,
+            call_traces.clone(),
+            block,
+            bytecodes,
+            block_ctx,
+        ))
+    }
+
+    pub fn run_l1_tx(
+        &self,
+        tx: Transaction,
+        execution_mode: TxExecutionMode,
+    ) -> Result<(), String> {
+        let tx_hash = tx.hash();
+        //let transaction_type = l2_tx.common_data.transaction_type;
+        let transaction_type = TransactionType::PriorityOpTransaction;
+
+        tracing::info!("");
+        tracing::info!("Validating {}", format!("{:?}", tx_hash).bold());
+
+        /*match self.validate_tx(&l2_tx) {
+            Ok(_) => (),
+            Err(e) => {
+                return Err(e);
+            }
+        };*/
+
+        tracing::info!("Executing {}", format!("{:?}", tx_hash).bold());
+
+        {
+            let mut inner = self
+                .inner
+                .write()
+                .map_err(|e| format!("Failed to acquire write lock: {}", e))?;
+            inner.filters.notify_new_pending_transaction(tx_hash);
+        }
+
+        let (keys, result, call_traces, block, bytecodes, block_ctx) =
+            self.run_l1_tx_raw(tx.clone(), execution_mode, vec![], true)?;
+
+        if let ExecutionResult::Halt { reason } = result.result {
+            // Halt means that something went really bad with the transaction execution (in most cases invalid signature,
+            // but it could also be bootloader panic etc).
+            // In such case, we should not persist the VM data, and we should pretend that transaction never existed.
+            return Err(format!("Transaction HALT: {}", reason));
+        }
+        // Write all the mutated keys (storage slots).
+        let mut inner = self
+            .inner
+            .write()
+            .map_err(|e| format!("Failed to acquire write lock: {}", e))?;
+        for (key, value) in keys.iter() {
+            inner.fork_storage.set_value(*key, *value);
+        }
+
+        // Write all the factory deps.
+        for (hash, code) in bytecodes.iter() {
+            inner.fork_storage.store_factory_dep(
+                u256_to_h256(*hash),
+                code.iter()
+                    .flat_map(|entry| {
+                        let mut bytes = vec![0u8; 32];
+                        entry.to_big_endian(&mut bytes);
+                        bytes.to_vec()
+                    })
+                    .collect(),
+            )
+        }
+
+        let interop_topic = H256::from_str(INTEROP_EVENT_HASH).unwrap();
+
+        for (log_idx, event) in result.logs.events.iter().enumerate() {
+            let topic = event.indexed_topics.get(0).unwrap();
+            if *topic == interop_topic {
+                dbg!("Got interop");
+                send_interop(inner.fork_storage.chain_id, event);
+            }
+
+            inner.filters.notify_new_log(
+                &Log {
+                    address: event.address,
+                    topics: event.indexed_topics.clone(),
+                    data: Bytes(event.value.clone()),
+                    block_hash: Some(block.hash),
+                    block_number: Some(block.number),
+                    l1_batch_number: block.l1_batch_number,
+                    transaction_hash: Some(tx_hash),
+                    transaction_index: Some(U64::zero()),
+                    log_index: Some(U256::from(log_idx)),
+                    transaction_log_index: Some(U256::from(log_idx)),
+                    log_type: None,
+                    removed: Some(false),
+                    block_timestamp: Some(block.timestamp.as_u64().into()),
+                },
+                block.number,
+            );
+        }
+        let tx_receipt = TransactionReceipt {
+            transaction_hash: tx_hash,
+            transaction_index: U64::from(0),
+            block_hash: block.hash,
+            block_number: block.number,
+            l1_batch_tx_index: None,
+            l1_batch_number: block.l1_batch_number,
+            from: tx.initiator_account(),
+            to: tx.recipient_account(),
+            root: H256::zero(),
+            cumulative_gas_used: Default::default(),
+            gas_used: Some(tx.gas_limit() - result.refunds.gas_refunded),
+            contract_address: contract_address_from_tx_result(&result),
+            logs: result
+                .logs
+                .events
+                .iter()
+                .enumerate()
+                .map(|(log_idx, log)| Log {
+                    address: log.address,
+                    topics: log.indexed_topics.clone(),
+                    data: Bytes(log.value.clone()),
+                    block_hash: Some(block.hash),
+                    block_number: Some(block.number),
+                    l1_batch_number: block.l1_batch_number,
+                    transaction_hash: Some(tx_hash),
+                    transaction_index: Some(U64::zero()),
+                    log_index: Some(U256::from(log_idx)),
+                    transaction_log_index: Some(U256::from(log_idx)),
+                    log_type: None,
+                    removed: Some(false),
+                    block_timestamp: Some(block.timestamp.as_u64().into()),
+                })
+                .collect(),
+            l2_to_l1_logs: vec![],
+            status: if result.result.is_failed() {
+                U64::from(0)
+            } else {
+                U64::from(1)
+            },
+            effective_gas_price: Some(inner.fee_input_provider.l2_gas_price.into()),
+            transaction_type: Some((transaction_type as u32).into()),
+            logs_bloom: Default::default(),
+        };
+        /*let debug = create_debug_output(&l2_tx, &result, call_traces).expect("create debug output"); // OK to unwrap here as Halt is handled above
+        inner.tx_results.insert(
+            tx_hash,
+            TransactionResult {
+                info: TxExecutionInfo {
+                    tx: l2_tx,
+                    batch_number: block.l1_batch_number.unwrap_or_default().as_u32(),
+                    miniblock_number: block.number.as_u64(),
+                    result,
+                },
+                receipt: tx_receipt,
+                debug,
+            },
+        );*/
+
+        // With the introduction of 'l2 blocks' (and virtual blocks),
+        // we are adding one l2 block at the end of each batch (to handle things like remaining events etc).
+        //  You can look at insert_fictive_l2_block function in VM to see how this fake block is inserted.
+        let block_ctx = block_ctx.new_block();
+        let parent_block_hash = block.hash;
+        let empty_block_at_end_of_batch = create_empty_block(
+            block_ctx.miniblock,
+            block_ctx.timestamp,
+            block_ctx.batch,
+            Some(parent_block_hash),
+        );
+
+        inner.current_batch = inner.current_batch.saturating_add(1);
+
+        for (i, block) in vec![block, empty_block_at_end_of_batch]
+            .into_iter()
+            .enumerate()
+        {
+            // archive current state before we produce new batch/blocks
+            if let Err(err) = inner.archive_state() {
+                tracing::error!(
+                    "failed archiving state for block {}: {}",
+                    inner.current_miniblock,
+                    err
+                );
+            }
+
+            inner.current_miniblock = inner.current_miniblock.saturating_add(1);
+            inner.current_timestamp = inner.current_timestamp.saturating_add(1);
+
+            let actual_l1_batch_number = block
+                .l1_batch_number
+                .expect("block must have a l1_batch_number");
+            if actual_l1_batch_number.as_u32() != inner.current_batch {
+                panic!(
+                    "expected next block to have batch_number {}, got {}",
+                    inner.current_batch,
+                    actual_l1_batch_number.as_u32()
+                );
+            }
+
+            if block.number.as_u64() != inner.current_miniblock {
+                panic!(
+                    "expected next block to have miniblock {}, got {} | {i}",
+                    inner.current_miniblock,
+                    block.number.as_u64()
+                );
+            }
+
+            if block.timestamp.as_u64() != inner.current_timestamp {
+                panic!(
+                    "expected next block to have timestamp {}, got {} | {i}",
+                    inner.current_timestamp,
+                    block.timestamp.as_u64()
+                );
+            }
+
+            let block_hash = block.hash;
+            inner.current_miniblock_hash = block_hash;
+            inner.block_hashes.insert(block.number.as_u64(), block.hash);
+            inner.blocks.insert(block.hash, block);
+            inner.filters.notify_new_block(block_hash);
+        }
+
+        Ok(())
+    }
+
     // Forcefully stores the given bytecode at a given account.
     pub fn override_bytecode(&self, address: &Address, bytecode: &[u8]) -> Result<(), String> {
         let mut inner = self
@@ -1749,6 +2248,43 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
 
         inner.fork_storage.set_value(code_key, bytecode_hash);
 
+        Ok(())
+    }
+
+    /// Runs an interop transaction that was received from outside.
+    /// They will be handled in similar way to L1 transactions.
+    pub fn run_interop(&self, message: &InteropMessage) -> Result<(), String> {
+        tracing::info!("Processing interop message..");
+
+        let tx = Transaction {
+            common_data: ExecuteTransactionCommon::L1(L1TxCommonData {
+                sender: message.source_address.into(),
+                // FIXME
+                serial_id: PriorityOpId(13),
+                layer_2_tip_fee: U256::zero(),
+                full_fee: U256::zero(),
+                max_fee_per_gas: U256::zero(),
+                gas_limit: message.get_gas_limit(),
+                gas_per_pubdata_limit: message.get_pubdata_limit(),
+                op_processing_type: OpProcessingType::Common,
+                priority_queue_type: PriorityQueueType::Deque,
+                canonical_tx_hash: message.canonical_tx_hash(),
+                to_mint: message.get_mint_value(),
+                refund_recipient: message.get_refund_recipient(),
+                eth_block: 0,
+            }),
+            execute: Execute {
+                contract_address: Some(message.destination_address.into()),
+                calldata: message.get_calldata(),
+                value: message.get_l2_value(),
+                factory_deps: vec![],
+            },
+            // FIXME
+            received_timestamp_ms: 300,
+            raw_bytes: None,
+        };
+
+        self.run_l1_tx(tx, TxExecutionMode::VerifyExecute)?;
         Ok(())
     }
 }

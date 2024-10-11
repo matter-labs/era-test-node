@@ -1,5 +1,6 @@
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
+use std::convert::TryInto;
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::{Read, Write};
@@ -7,7 +8,9 @@ use std::path::Path;
 use std::time::Duration;
 use zksync_multivm::interface::VmEvent;
 use zksync_types::L2ChainId;
+use zksync_types::H160;
 use zksync_types::H256;
+use zksync_types::U256;
 use zksync_utils::h256_to_u256;
 
 use super::InMemoryNode;
@@ -26,6 +29,55 @@ pub struct InteropMessage {
     pub destination_address: H256,
     pub source_address: H256,
     pub payload: String,
+}
+
+impl InteropMessage {
+    const MINT_VAL_SLOT: usize = 4;
+    const L2_VALUE_SLOT: usize = 5;
+    const GAS_LIMIT_SLOT: usize = 6;
+    const PUBDATA_LIMIT_SLOT: usize = 7;
+    const REFUND_SLOT: usize = 8;
+
+    const CALLDATA_LENGTH_SLOT: usize = 12;
+
+    pub fn get_calldata(&self) -> Vec<u8> {
+        let calldata_len = self.get_payload_word(Self::CALLDATA_LENGTH_SLOT).as_u64();
+        let bytes_left = self.payload.len() - (Self::CALLDATA_LENGTH_SLOT + 1) * 64;
+        assert_eq!(calldata_len, bytes_left as u64);
+
+        hex::decode(&self.payload[64 * (Self::CALLDATA_LENGTH_SLOT + 1)..]).unwrap()
+    }
+    pub fn get_gas_limit(&self) -> U256 {
+        self.get_payload_word(Self::GAS_LIMIT_SLOT)
+    }
+    pub fn get_pubdata_limit(&self) -> U256 {
+        self.get_payload_word(Self::PUBDATA_LIMIT_SLOT)
+    }
+
+    pub fn get_mint_value(&self) -> U256 {
+        self.get_payload_word(Self::MINT_VAL_SLOT)
+    }
+
+    pub fn get_l2_value(&self) -> U256 {
+        self.get_payload_word(Self::L2_VALUE_SLOT)
+    }
+
+    pub fn canonical_tx_hash(&self) -> H256 {
+        // FIXME
+        H256::random()
+    }
+
+    pub fn get_refund_recipient(&self) -> H160 {
+        let mut bytes = [0u8; 32];
+        self.get_payload_word(Self::REFUND_SLOT)
+            .to_big_endian(&mut bytes);
+        H160::from_slice(&bytes[12..32])
+    }
+
+    fn get_payload_word(&self, slot_id: usize) -> U256 {
+        let bytes = hex::decode(&self.payload[64 * slot_id..64 * (slot_id + 1)]).unwrap();
+        U256::from_big_endian(&bytes)
+    }
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -107,6 +159,8 @@ impl InteropWatcher {
 
         let mut interval = tokio::time::interval(Duration::from_secs(1));
 
+        let mut messages_parsed = 0;
+
         // Run the file watcher in a tokio task
         tokio::spawn(async move {
             // Listen for file events
@@ -121,8 +175,39 @@ impl InteropWatcher {
                 } else {
                     InteropMessages::default()
                 };
-                println!("Currently {} messages.", previous_messages.messages.len());
+
+                if previous_messages.messages.len() != messages_parsed {
+                    println!(
+                        "Seeing {} new messages",
+                        previous_messages.messages.len() - messages_parsed
+                    );
+
+                    for message_id in messages_parsed..previous_messages.messages.len() {
+                        let message = previous_messages.messages.get(message_id).unwrap();
+                        node.run_interop(message).unwrap();
+                    }
+
+                    messages_parsed = previous_messages.messages.len();
+                }
             }
         })
+    }
+}
+
+mod tests {
+    use crate::node::interop::InteropMessage;
+
+    #[test]
+    fn test_get_calldata() {
+        let input: &str = r#"    {
+            "source_chain": 260,
+            "destination_chain": "0x0000000000000000000000000000000000000000000000000000000000002f5b",
+            "destination_address": "0x000000000000000000000000009e4886247aebebe2c5e5f6d11181ac33ddd7d4",
+            "source_address": "0x000000000000000000000000e2b8cb53a43a56d4d2ab6131c81bd76b86d3afe5",
+            "payload": "0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000016000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000002f5b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002710000000000000000000000000000000000000000000000000000000000000c3500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000009e4886247aebebe2c5e5f6d11181ac33ddd7d4000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000000"
+        }"#;
+        let msg: InteropMessage = serde_json::from_str(input).unwrap();
+        assert_eq!(0, msg.get_calldata().len());
+        assert_eq!(10000, msg.get_gas_limit().as_u64());
     }
 }
