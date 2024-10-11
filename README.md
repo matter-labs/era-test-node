@@ -305,3 +305,23 @@ jobs:
 We welcome contributions from the community! If you're interested in contributing to the zkSync Era In-Memory Node, please take a look at our [CONTRIBUTING.md](./.github/CONTRIBUTING.md) for guidelines and details on the process.
 
 Thank you for making zkSync Era In-Memory Node better! 🙌
+
+
+
+
+## Interop README
+
+* Create directory '/tmp/interop' - it will be used for communication.
+* Start 2 era-test-nodes:
+  * one 'normally' `cargo run`
+  * the other one on different port and with different chain id: `cargo run -- --chain-id 12123 --port 8012 run`
+* Send the interop command to one of them - and observe the results on another one.
+
+
+
+// This one mints 8000 wei on the destination chain, and transfers 7000 wei to one account and 1000 to another.
+```
+cast call -r http://localhost:8011 0x915148c3a7d97ecF4F741FfaaB8263F9D66F2d0c  "requestL2TransactionTwoBridges((uint256, uint256, uint256, uint256, uint256, address, address, uint256, bytes))" "(12123, 8000, 7000, 10000000, 50000, 0x6209469856C9C62bfFf3D5b9D017A3270Da3c13a, 0x9813075Bf4Fd698a0F3E495b4b8bDd4F0072d9A4, 100, 0x)" --private-key 0xb0680d66303a0163a19294f1ef8c95cd69a9d7902a4aca99c05f3e134e68a11a
+```
+
+You can see the details of the interop messages in json files in '/tmp/interop' directory.
