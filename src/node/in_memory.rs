@@ -13,7 +13,9 @@ use crate::{
     fork::{block_on, ForkDetails, ForkSource, ForkStorage},
     formatter,
     node::{
-        call_error_tracer::CallErrorTracer, fee_model::TestNodeFeeInputProvider,
+        call_error_tracer::CallErrorTracer,
+        fee_model::TestNodeFeeInputProvider,
+        interop::{send_interop, INTEROP_EVENT_HASH},
         storage_logs::print_storage_logs_details,
     },
     observability::Observability,
@@ -1559,7 +1561,15 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
             )
         }
 
+        let interop_topic = H256::from_str(INTEROP_EVENT_HASH).unwrap();
+
         for (log_idx, event) in result.logs.events.iter().enumerate() {
+            let topic = event.indexed_topics.get(0).unwrap();
+            if *topic == interop_topic {
+                dbg!("Got interop");
+                send_interop(inner.fork_storage.chain_id, event);
+            }
+
             inner.filters.notify_new_log(
                 &Log {
                     address: event.address,

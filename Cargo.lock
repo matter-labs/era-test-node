@@ -1820,6 +1820,7 @@ dependencies = [
  "ethabi 16.0.0",
  "ethers",
  "eyre",
+ "fs2",
  "futures 0.3.30",
  "hex",
  "httptest",

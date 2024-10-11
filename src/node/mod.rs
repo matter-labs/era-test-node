@@ -10,9 +10,9 @@ mod fee_model;
 mod hardhat;
 mod in_memory;
 mod in_memory_ext;
+mod interop;
 mod net;
 mod storage_logs;
 mod web3;
 mod zks;
-
 pub use in_memory::*;
