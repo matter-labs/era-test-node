@@ -1,6 +1,6 @@
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
-use std::convert::TryInto;
+use sha3::{Digest, Keccak256};
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::{Read, Write};
@@ -77,6 +77,17 @@ impl InteropMessage {
     fn get_payload_word(&self, slot_id: usize) -> U256 {
         let bytes = hex::decode(&self.payload[64 * slot_id..64 * (slot_id + 1)]).unwrap();
         U256::from_big_endian(&bytes)
+    }
+
+    pub fn compute_aliased_sender(&self) -> H160 {
+        let source_chain = U256::from(self.source_chain);
+        let mut hasher = Keccak256::new();
+        hasher.update(self.source_address.as_bytes());
+        let mut bytes = [0u8; 32];
+        source_chain.to_big_endian(&mut bytes);
+        hasher.update(bytes);
+        let result = hasher.finalize();
+        H160::from_slice(&result[0..20])
     }
 }
 
@@ -194,6 +205,7 @@ impl InteropWatcher {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use crate::node::interop::InteropMessage;
 

@@ -325,3 +325,13 @@ cast call -r http://localhost:8011 0x915148c3a7d97ecF4F741FfaaB8263F9D66F2d0c  "
 ```
 
 You can see the details of the interop messages in json files in '/tmp/interop' directory.
+
+Issues:
+
+[x] aliasing not applied yet
+[*] basic explorer
+[] have to fix adding 'transactions' to the list (so that eth-get-tx returns something) - needed for explorer.
+[] no verifications of asset transfers 
+[] no support for ERC 20 - only native ETH
+[] gas refunds not handled
+[] messy / forked code - have to unify.

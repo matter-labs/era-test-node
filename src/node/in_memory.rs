@@ -2258,7 +2258,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
 
         let tx = Transaction {
             common_data: ExecuteTransactionCommon::L1(L1TxCommonData {
-                sender: message.source_address.into(),
+                sender: message.compute_aliased_sender(),
                 // FIXME
                 serial_id: PriorityOpId(13),
                 layer_2_tip_fee: U256::zero(),
