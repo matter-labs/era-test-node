@@ -4,10 +4,14 @@ use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::{Read, Write};
 use std::path::Path;
+use std::time::Duration;
 use zksync_multivm::interface::VmEvent;
 use zksync_types::L2ChainId;
 use zksync_types::H256;
 use zksync_utils::h256_to_u256;
+
+use super::InMemoryNode;
+use crate::fork::ForkSource;
 
 const LOCK_FILE: &str = "/tmp/interop/LOCK";
 
@@ -86,4 +90,39 @@ pub fn acquire_lock(lock_file_path: &str) -> std::fs::File {
 /// Release the lock by unlocking the lock file
 pub fn release_lock(lock_file: &std::fs::File) {
     lock_file.unlock().expect("Unable to release lock");
+}
+
+pub struct InteropWatcher {}
+
+impl InteropWatcher {
+    pub async fn start_watching<
+        S: std::marker::Sync + std::marker::Send + 'static + ForkSource + std::fmt::Debug + Clone,
+    >(
+        chain_id: u64,
+        node: InMemoryNode<S>,
+    ) -> tokio::task::JoinHandle<()> {
+        let file_to_watch = format!("/tmp/interop/interop_to_{}.json", chain_id);
+
+        println!("Watching file {} for changes...", file_to_watch);
+
+        let mut interval = tokio::time::interval(Duration::from_secs(1));
+
+        // Run the file watcher in a tokio task
+        tokio::spawn(async move {
+            // Listen for file events
+            loop {
+                interval.tick().await;
+                let path = Path::new(&file_to_watch);
+                let previous_messages: InteropMessages = if let Ok(mut file) = File::open(path) {
+                    let mut contents = String::new();
+                    file.read_to_string(&mut contents)
+                        .expect("Unable to read the file");
+                    serde_json::from_str(&contents).unwrap()
+                } else {
+                    InteropMessages::default()
+                };
+                println!("Currently {} messages.", previous_messages.messages.len());
+            }
+        })
+    }
 }

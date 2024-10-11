@@ -124,11 +124,13 @@ impl<S: ForkSource> ForkStorage<S> {
     pub fn new(
         fork: Option<ForkDetails>,
         system_contracts_options: &system_contracts::Options,
+        chain_id: Option<u64>,
     ) -> Self {
-        let chain_id = fork
-            .as_ref()
-            .and_then(|d| d.overwrite_chain_id)
-            .unwrap_or(L2ChainId::from(TEST_NODE_NETWORK_ID));
+        let chain_id = chain_id.map(|x| L2ChainId::try_from(x).unwrap()).unwrap_or(
+            fork.as_ref()
+                .and_then(|d| d.overwrite_chain_id)
+                .unwrap_or(L2ChainId::from(TEST_NODE_NETWORK_ID)),
+        );
         tracing::info!("Starting network with chain id: {:?}", chain_id);
 
         ForkStorage {
@@ -769,7 +771,7 @@ mod tests {
         };
 
         let mut fork_storage: ForkStorage<testing::ExternalStorage> =
-            ForkStorage::new(Some(fork_details), &options);
+            ForkStorage::new(Some(fork_details), &options, None);
 
         assert!(fork_storage.is_write_initial(&never_written_key));
         assert!(!fork_storage.is_write_initial(&key_with_some_value));

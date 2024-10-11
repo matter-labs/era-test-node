@@ -78,6 +78,9 @@ impl TestNodeConfig {
         if let Some(resolve_hashes) = &opt.resolve_hashes {
             self.node.resolve_hashes = *resolve_hashes;
         }
+        if let Some(chain_id) = &opt.chain_id {
+            self.node.chain_id = Some(*chain_id);
+        }
 
         if let Some(contract_options) = &opt.dev_system_contracts {
             self.node.system_contracts_options = match contract_options {
@@ -140,6 +143,7 @@ pub mod node {
         pub show_gas_details: ShowGasDetails,
         pub resolve_hashes: bool,
         pub system_contracts_options: system_contracts::Options,
+        pub chain_id: Option<u64>,
     }
 
     impl Default for InMemoryNodeConfig {
@@ -153,6 +157,7 @@ pub mod node {
                 show_gas_details: Default::default(),
                 resolve_hashes: Default::default(),
                 system_contracts_options: Default::default(),
+                chain_id: Default::default(),
             }
         }
     }

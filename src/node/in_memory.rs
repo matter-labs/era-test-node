@@ -68,8 +68,9 @@ use zksync_types::{
     get_code_key, get_nonce_key,
     l2::{L2Tx, TransactionType},
     utils::{decompose_full_nonce, nonces_to_full_nonce, storage_key_for_eth_balance},
-    PackedEthSignature, StorageKey, StorageValue, Transaction, ACCOUNT_CODE_STORAGE_ADDRESS,
-    MAX_L2_TX_GAS_LIMIT, SYSTEM_CONTEXT_ADDRESS, SYSTEM_CONTEXT_BLOCK_INFO_POSITION,
+    L2ChainId, PackedEthSignature, StorageKey, StorageValue, Transaction,
+    ACCOUNT_CODE_STORAGE_ADDRESS, MAX_L2_TX_GAS_LIMIT, SYSTEM_CONTEXT_ADDRESS,
+    SYSTEM_CONTEXT_BLOCK_INFO_POSITION,
 };
 use zksync_utils::{bytecode::hash_bytecode, h256_to_account_address, h256_to_u256, u256_to_h256};
 use zksync_web3_decl::error::Web3Error;
@@ -238,7 +239,11 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
                 blocks,
                 block_hashes,
                 filters: Default::default(),
-                fork_storage: ForkStorage::new(fork, &config.system_contracts_options),
+                fork_storage: ForkStorage::new(
+                    fork,
+                    &config.system_contracts_options,
+                    config.chain_id,
+                ),
                 config,
                 console_log_handler: ConsoleLogHandler::default(),
                 system_contracts: SystemContracts::from_options(&config.system_contracts_options),
@@ -269,7 +274,11 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
                 blocks,
                 block_hashes,
                 filters: Default::default(),
-                fork_storage: ForkStorage::new(fork, &config.system_contracts_options),
+                fork_storage: ForkStorage::new(
+                    fork,
+                    &config.system_contracts_options,
+                    config.chain_id,
+                ),
                 config,
                 console_log_handler: ConsoleLogHandler::default(),
                 system_contracts: SystemContracts::from_options(&config.system_contracts_options),
@@ -920,6 +929,14 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
             .map_err(|e| format!("Failed to acquire read lock: {}", e))?;
 
         Ok(inner.config)
+    }
+
+    pub fn get_chain_id(&self) -> Result<L2ChainId, String> {
+        let inner = self
+            .inner
+            .read()
+            .map_err(|e| format!("Failed to acquire read lock: {}", e))?;
+        Ok(inner.fork_storage.chain_id)
     }
 
     fn get_gas_values(&self) -> Result<GasConfig, String> {

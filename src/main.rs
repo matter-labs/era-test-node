@@ -8,6 +8,7 @@ use config::TestNodeConfig;
 use fork::{ForkDetails, ForkSource};
 use http_fork_source::HttpForkSource;
 use logging_middleware::LoggingMiddleware;
+use node::interop::InteropWatcher;
 use tracing_subscriber::filter::LevelFilter;
 
 mod bootloader_debug;
@@ -204,18 +205,25 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("");
     }
 
+    let chain_id = node.get_chain_id().unwrap().as_u64();
+
     let threads = build_json_http(
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), config.node.port),
         log_level_filter,
-        node,
+        node.clone(),
     )
     .await;
+
+    let interop_watcher = InteropWatcher::start_watching(chain_id, node).await;
 
     tracing::info!("========================================");
     tracing::info!("  Node is ready at 127.0.0.1:{}", config.node.port);
     tracing::info!("========================================");
 
-    future::select_all(vec![threads]).await.0.unwrap();
+    future::select_all(vec![threads, interop_watcher])
+        .await
+        .0
+        .unwrap();
 
     Ok(())
 }

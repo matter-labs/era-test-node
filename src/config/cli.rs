@@ -96,6 +96,10 @@ pub struct Cli {
 
     #[arg(long)]
     pub override_bytecodes_dir: Option<String>,
+
+    /// Force the given chain id.
+    #[arg(long)]
+    pub chain_id: Option<u64>,
 }
 
 #[derive(Debug, Subcommand)]
