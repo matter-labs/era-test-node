@@ -170,7 +170,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> InMemoryNo
 
         l2_tx.set_input(bytes, hash);
 
-        {
+        /*{
             let reader = self
                 .inner
                 .read()
@@ -186,7 +186,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> InMemoryNo
                 tracing::error!("{err}");
                 return Err(TransparentError(err).into());
             }
-        }
+        }*/
 
         self.run_l2_tx(l2_tx, system_contracts).map_err(|err| {
             Web3Error::SubmitTransactionError(
