@@ -16,6 +16,9 @@ FROM ubuntu:latest
 ARG CHAIN_ID
 ENV CHAIN_ID=${CHAIN_ID}
 
+ARG PORT
+ENV PORT=${PORT}
+
 # Set up dependencies
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 
@@ -27,7 +30,6 @@ RUN useradd -m $USER
 COPY --from=builder /usr/src/era-test-node/target/release/era_test_node /usr/local/bin/era_test_node
 
 # Step 9: Verify and set execute permissions
-RUN ls -l /usr/local/bin/era_test_node  # List permissions for debugging
 RUN chmod +x /usr/local/bin/era_test_node && \
     chown -R $USER:$USER /usr/local/bin/era_test_node
 
@@ -38,4 +40,4 @@ USER root
 EXPOSE 8011
 
 # Step 12: Explicitly run the server binary with its full path
-CMD ["sh", "-c", "/usr/local/bin/era_test_node --chain-id ${CHAIN_ID}"]
+CMD ["sh", "-c", "/usr/local/bin/era_test_node --chain-id ${CHAIN_ID} --port ${PORT}"]
