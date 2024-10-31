@@ -10,10 +10,6 @@ use anyhow::Context as _;
 use colored::Colorize;
 use indexmap::IndexMap;
 use once_cell::sync::OnceCell;
-use zksync_basic_types::{
-    web3::{keccak256, Bytes, Index},
-    AccountTreeId, Address, L1BatchNumber, L2BlockNumber, H160, H256, H64, U256, U64,
-};
 use zksync_contracts::BaseSystemContracts;
 use zksync_multivm::{
     interface::{
@@ -44,6 +40,10 @@ use zksync_types::{
     BloomInput, PackedEthSignature, StorageKey, StorageValue, Transaction,
     ACCOUNT_CODE_STORAGE_ADDRESS, EMPTY_UNCLES_HASH, MAX_L2_TX_GAS_LIMIT, SYSTEM_CONTEXT_ADDRESS,
     SYSTEM_CONTEXT_BLOCK_INFO_POSITION,
+};
+use zksync_types::{
+    web3::{keccak256, Bytes, Index},
+    AccountTreeId, Address, L1BatchNumber, L2BlockNumber, H160, H256, H64, U256, U64,
 };
 use zksync_utils::{bytecode::hash_bytecode, h256_to_account_address, h256_to_u256, u256_to_h256};
 use zksync_web3_decl::error::Web3Error;
@@ -1082,7 +1082,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         match &tx_result.result {
             ExecutionResult::Success { output } => {
                 tracing::info!("Call: {}", "SUCCESS".green());
-                let output_bytes = zksync_basic_types::web3::Bytes::from(output.clone());
+                let output_bytes = zksync_types::web3::Bytes::from(output.clone());
                 tracing::info!("Output: {}", serde_json::to_string(&output_bytes).unwrap());
             }
             ExecutionResult::Revert { output } => {
@@ -1815,7 +1815,7 @@ pub fn load_last_l1_batch<S: ReadStorage>(storage: StoragePtr<S>) -> Option<(u64
 mod tests {
     use ethabi::{Token, Uint};
     use gas::DEFAULT_FAIR_PUBDATA_PRICE;
-    use zksync_basic_types::Nonce;
+    use zksync_types::Nonce;
     use zksync_types::{utils::deployed_address_create, K256PrivateKey};
 
     use super::*;
@@ -2000,7 +2000,7 @@ mod tests {
                 gas_per_pubdata_limit: U256::from(50000),
             },
             U256::from(0),
-            zksync_basic_types::L2ChainId::from(260),
+            zksync_types::L2ChainId::from(260),
             &private_key,
             vec![],
             Default::default(),
