@@ -11,11 +11,12 @@ use colored::Colorize;
 use indexmap::IndexMap;
 use once_cell::sync::OnceCell;
 use zksync_contracts::BaseSystemContracts;
+use zksync_multivm::interface::InspectExecutionMode;
 use zksync_multivm::{
     interface::{
         storage::{ReadStorage, StoragePtr, WriteStorage},
         Call, ExecutionResult, L1BatchEnv, L2Block, L2BlockEnv, SystemEnv, TxExecutionMode,
-        VmExecutionMode, VmExecutionResultAndLogs, VmFactory, VmInterface, VmInterfaceExt,
+        VmExecutionResultAndLogs, VmFactory, VmInterface, VmInterfaceExt,
     },
     tracers::CallTracer,
     utils::{
@@ -722,7 +723,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
         let tx: Transaction = l2_tx.into();
         vm.push_transaction(tx);
 
-        vm.execute(VmExecutionMode::OneTx)
+        vm.execute(InspectExecutionMode::OneTx)
     }
 
     /// Sets the `impersonated_account` field of the node.
@@ -1072,7 +1073,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
             CallErrorTracer::new().into_tracer_pointer(),
             CallTracer::new(call_tracer_result.clone()).into_tracer_pointer(),
         ];
-        let tx_result = vm.inspect(&mut tracers.into(), VmExecutionMode::OneTx);
+        let tx_result = vm.inspect(&mut tracers.into(), InspectExecutionMode::OneTx);
 
         let call_traces = Arc::try_unwrap(call_tracer_result)
             .unwrap()
@@ -1518,7 +1519,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
             bytecodes.insert(hash, bytecode);
         }
         if execute_bootloader {
-            vm.execute(VmExecutionMode::Bootloader);
+            vm.execute(InspectExecutionMode::Bootloader);
         }
 
         let modified_keys = storage.borrow().modified_storage_keys().clone();
@@ -1618,7 +1619,6 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
             l1_batch_number: block.l1_batch_number,
             from: l2_tx.initiator_account(),
             to: l2_tx.recipient_account(),
-            root: H256::zero(),
             cumulative_gas_used: Default::default(),
             gas_used: Some(l2_tx.common_data.fee.gas_limit - result.refunds.gas_refunded),
             contract_address: contract_address_from_tx_result(&result),

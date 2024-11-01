@@ -192,7 +192,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> DebugNames
 
             let tx_result = vm.inspect(
                 &mut tracer.into(),
-                zksync_multivm::interface::VmExecutionMode::OneTx,
+                zksync_multivm::interface::InspectExecutionMode::OneTx,
             );
             let call_traces = if only_top {
                 vec![]

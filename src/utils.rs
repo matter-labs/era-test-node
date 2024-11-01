@@ -98,7 +98,7 @@ pub fn mine_empty_blocks<S: std::fmt::Debug + ForkSource>(
 
             let mut vm: Vm<_, HistoryDisabled> = Vm::new(batch_env, system_env, storage.clone());
 
-            vm.execute(zksync_multivm::interface::VmExecutionMode::Bootloader);
+            vm.execute(zksync_multivm::interface::InspectExecutionMode::Bootloader);
 
             // we should not have any bytecodes
             let modified_keys = storage.borrow().modified_storage_keys().clone();

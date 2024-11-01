@@ -178,6 +178,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> ZksNamespa
                     l2_erc20_default_bridge: Default::default(),
                     l1_weth_bridge: Default::default(),
                     l2_weth_bridge: Default::default(),
+                    l2_legacy_shared_bridge: Default::default(),
                 },
             };
 
@@ -862,6 +863,7 @@ mod tests {
             l2_erc20_default_bridge: Default::default(),
             l1_weth_bridge: Default::default(),
             l2_weth_bridge: Default::default(),
+            l2_legacy_shared_bridge: Default::default(),
         };
 
         let actual_bridge_addresses = node
@@ -888,6 +890,7 @@ mod tests {
             l2_erc20_default_bridge: Some(H160::repeat_byte(0x2)),
             l1_weth_bridge: Some(H160::repeat_byte(0x3)),
             l2_weth_bridge: Some(H160::repeat_byte(0x4)),
+            l2_legacy_shared_bridge: Some(H160::repeat_byte(0x7)),
         };
         mock_server.expect(
             serde_json::json!({
@@ -903,7 +906,8 @@ mod tests {
                     "l1Erc20DefaultBridge": format!("{:#x}", input_bridge_addresses.l1_erc20_default_bridge.unwrap()),
                     "l2Erc20DefaultBridge": format!("{:#x}", input_bridge_addresses.l2_erc20_default_bridge.unwrap()),
                     "l1WethBridge": format!("{:#x}", input_bridge_addresses.l1_weth_bridge.unwrap()),
-                    "l2WethBridge": format!("{:#x}", input_bridge_addresses.l2_weth_bridge.unwrap())
+                    "l2WethBridge": format!("{:#x}", input_bridge_addresses.l2_weth_bridge.unwrap()),
+                    "l2LegacySharedBridge": format!("{:#x}", input_bridge_addresses.l2_legacy_shared_bridge.unwrap())
                 },
                 "id": 0
             }),
