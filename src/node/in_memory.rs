@@ -1932,6 +1932,7 @@ mod tests {
         let node: InMemoryNode<testing::ExternalStorage> = InMemoryNode::new(
             Some(ForkDetails {
                 fork_source: Box::new(mock_db),
+                chain_id: TEST_NODE_NETWORK_ID.into(),
                 l1_block: L1BatchNumber(1),
                 l2_block: Block::default(),
                 l2_miniblock: 2,
