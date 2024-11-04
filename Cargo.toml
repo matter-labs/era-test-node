@@ -4,18 +4,18 @@ version = "0.1.0-alpha.30"
 edition = "2018"
 authors = ["The Matter Labs Team <hello@matterlabs.dev>"]
 homepage = "https://zksync.io/"
-repository = "https://github.com/matter-labs/zksync-era"
+repository = "https://github.com/matter-labs/era-test-node"
 license = "MIT OR Apache-2.0"
 keywords = ["blockchain", "zksync"]
 categories = ["cryptography"]
 publish = false                                           # We don't want to publish our binaries.
 
 [dependencies]
-zksync_multivm = { git = "https://github.com/matter-labs/zksync-era.git", rev = "cfbcc11be0826e8c55fafa84ae01b2aead25d127" }
-zksync_contracts = { git = "https://github.com/matter-labs/zksync-era.git", rev = "cfbcc11be0826e8c55fafa84ae01b2aead25d127" }
-zksync_types = { git = "https://github.com/matter-labs/zksync-era.git", rev = "cfbcc11be0826e8c55fafa84ae01b2aead25d127" }
-zksync_utils = { git = "https://github.com/matter-labs/zksync-era.git", rev = "cfbcc11be0826e8c55fafa84ae01b2aead25d127" }
-zksync_web3_decl = { git = "https://github.com/matter-labs/zksync-era.git", rev = "cfbcc11be0826e8c55fafa84ae01b2aead25d127", features = [
+zksync_multivm = { git = "https://github.com/matter-labs/zksync-era.git", rev = "6c034f6e180cc92e99766f14c8840c90efa56cec" }
+zksync_contracts = { git = "https://github.com/matter-labs/zksync-era.git", rev = "6c034f6e180cc92e99766f14c8840c90efa56cec" }
+zksync_types = { git = "https://github.com/matter-labs/zksync-era.git", rev = "6c034f6e180cc92e99766f14c8840c90efa56cec" }
+zksync_utils = { git = "https://github.com/matter-labs/zksync-era.git", rev = "6c034f6e180cc92e99766f14c8840c90efa56cec" }
+zksync_web3_decl = { git = "https://github.com/matter-labs/zksync-era.git", rev = "6c034f6e180cc92e99766f14c8840c90efa56cec", features = [
     "server",
 ] }
 sha3 = "0.10.6"
@@ -64,6 +64,12 @@ tempdir = "0.3.7"
 maplit = "1.0.2"
 zksync-web3-rs = "0.1.1"
 ethers = { version = "2.0.4", features = ["rustls"] }
+jsonschema = "0.26.0"
+schemars = "0.8.21"
+openrpc-types = "0.4.0"
+alloy = { version = "0.5", features = ["full"] }
+test-log = "0.2.16"
+fs2 = "0.4.3"
 
 [profile.dev]
 debug = 0
