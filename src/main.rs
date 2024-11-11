@@ -4,6 +4,10 @@ use bytecode_override::override_bytecodes;
 use clap::Parser;
 use colored::Colorize;
 use config::cli::{Cli, Command};
+use config::gas::{
+    Estimation, GasConfig, DEFAULT_ESTIMATE_GAS_PRICE_SCALE_FACTOR,
+    DEFAULT_ESTIMATE_GAS_SCALE_FACTOR,
+};
 use config::TestNodeConfig;
 use fork::{ForkDetails, ForkSource};
 use http_fork_source::HttpForkSource;
@@ -31,13 +35,14 @@ mod testing;
 mod utils;
 
 use node::InMemoryNode;
-
 use std::fs::File;
 use std::{
     env,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     str::FromStr,
 };
+use zksync_types::fee_model::FeeParams;
+use zksync_web3_decl::namespaces::ZksNamespaceClient;
 
 use futures::{
     channel::oneshot,
@@ -118,7 +123,43 @@ async fn main() -> anyhow::Result<()> {
     // Use `Command::Run` as default.
     let command = opt.command.as_ref().unwrap_or(&Command::Run);
     let fork_details = match command {
-        Command::Run => None,
+        Command::Run => {
+            if opt.offline {
+                tracing::warn!(
+                    "Running in offline mode: default fee parameters will be used. \
+        To override, specify values in `config.toml` and use the `--config` flag."
+                );
+                None
+            } else {
+                // Initialize the client to get the fee params
+                let (_, client) = ForkDetails::fork_network_and_client("mainnet")
+                    .map_err(|e| anyhow!("Failed to initialize client: {:?}", e))?;
+
+                let fee = client.get_fee_params().await.map_err(|e| {
+                    tracing::error!("Failed to fetch fee params: {:?}", e);
+                    anyhow!(e)
+                })?;
+
+                let gas_config = match fee {
+                    FeeParams::V2(fee_v2) => GasConfig {
+                        l1_gas_price: Some(fee_v2.l1_gas_price()),
+                        l2_gas_price: Some(fee_v2.config().minimal_l2_gas_price),
+                        l1_pubdata_price: Some(fee_v2.l1_pubdata_price()),
+                        estimation: Some(Estimation {
+                            price_scale_factor: Some(DEFAULT_ESTIMATE_GAS_PRICE_SCALE_FACTOR),
+                            limit_scale_factor: Some(DEFAULT_ESTIMATE_GAS_SCALE_FACTOR),
+                        }),
+                    },
+                    FeeParams::V1(_) => {
+                        return Err(anyhow!("Unsupported FeeParams::V1 in this context"))
+                    }
+                };
+
+                config.gas = Some(gas_config);
+
+                None
+            }
+        }
         Command::Fork(fork) => {
             match ForkDetails::from_network(&fork.network, fork.fork_block_number, config.cache)
                 .await
