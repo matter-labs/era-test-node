@@ -12,12 +12,12 @@ publish = false                                           # We don't want to pub
 
 [dependencies]
 zkevm_opcode_defs = { git = "https://github.com/matter-labs/era-zkevm_opcode_defs.git", branch = "v1.5.0" }
-zksync_basic_types = { git = "https://github.com/matter-labs/zksync-era.git", rev = "cfbcc11be0826e8c55fafa84ae01b2aead25d127" }
-zksync_multivm = { git = "https://github.com/matter-labs/zksync-era.git", rev = "cfbcc11be0826e8c55fafa84ae01b2aead25d127" }
-zksync_contracts = { git = "https://github.com/matter-labs/zksync-era.git", rev = "cfbcc11be0826e8c55fafa84ae01b2aead25d127" }
-zksync_types = { git = "https://github.com/matter-labs/zksync-era.git", rev = "cfbcc11be0826e8c55fafa84ae01b2aead25d127" }
-zksync_utils = { git = "https://github.com/matter-labs/zksync-era.git", rev = "cfbcc11be0826e8c55fafa84ae01b2aead25d127" }
-zksync_web3_decl = { git = "https://github.com/matter-labs/zksync-era.git", rev = "cfbcc11be0826e8c55fafa84ae01b2aead25d127", features = [
+zksync_basic_types = { git = "https://github.com/matter-labs/zksync-era.git", rev = "c3f494252a5c5e47eabc6582418eb025c9f99897" }
+zksync_multivm = { git = "https://github.com/matter-labs/zksync-era.git", rev = "c3f494252a5c5e47eabc6582418eb025c9f99897" }
+zksync_contracts = { git = "https://github.com/matter-labs/zksync-era.git", rev = "c3f494252a5c5e47eabc6582418eb025c9f99897" }
+zksync_types = { git = "https://github.com/matter-labs/zksync-era.git", rev = "c3f494252a5c5e47eabc6582418eb025c9f99897" }
+zksync_utils = { git = "https://github.com/matter-labs/zksync-era.git", rev = "c3f494252a5c5e47eabc6582418eb025c9f99897" }
+zksync_web3_decl = { git = "https://github.com/matter-labs/zksync-era.git", rev = "c3f494252a5c5e47eabc6582418eb025c9f99897", features = [
     "server",
 ] }
 sha3 = "0.10.6"
