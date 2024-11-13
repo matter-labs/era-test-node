@@ -17,6 +17,8 @@ use zksync_multivm::{
         storage::{ReadStorage, StoragePtr, WriteStorage},
         Call, ExecutionResult, L1BatchEnv, L2Block, L2BlockEnv, SystemEnv, TxExecutionMode,
         VmExecutionResultAndLogs, VmFactory, VmInterface, VmInterfaceExt,
+        Call, ExecutionResult, InspectExecutionMode, L1BatchEnv, L2Block, L2BlockEnv, SystemEnv,
+        TxExecutionMode, VmExecutionResultAndLogs, VmFactory, VmInterface, VmInterfaceExt,
     },
     tracers::CallTracer,
     utils::{
@@ -38,13 +40,11 @@ use zksync_types::{
     get_code_key, get_nonce_key,
     l2::{L2Tx, TransactionType},
     utils::{decompose_full_nonce, nonces_to_full_nonce, storage_key_for_eth_balance},
-    BloomInput, PackedEthSignature, StorageKey, StorageValue, Transaction,
-    ACCOUNT_CODE_STORAGE_ADDRESS, EMPTY_UNCLES_HASH, MAX_L2_TX_GAS_LIMIT, SYSTEM_CONTEXT_ADDRESS,
-    SYSTEM_CONTEXT_BLOCK_INFO_POSITION,
-};
-use zksync_types::{
     web3::{keccak256, Bytes, Index},
-    AccountTreeId, Address, L1BatchNumber, L2BlockNumber, H160, H256, H64, U256, U64,
+    AccountTreeId, Address, BloomInput, L1BatchNumber, L2BlockNumber, PackedEthSignature,
+    StorageKey, StorageValue, Transaction, ACCOUNT_CODE_STORAGE_ADDRESS, EMPTY_UNCLES_HASH, H160,
+    H256, H64, MAX_L2_TX_GAS_LIMIT, SYSTEM_CONTEXT_ADDRESS, SYSTEM_CONTEXT_BLOCK_INFO_POSITION,
+    U256, U64,
 };
 use zksync_utils::{bytecode::hash_bytecode, h256_to_account_address, h256_to_u256, u256_to_h256};
 use zksync_web3_decl::error::Web3Error;
@@ -925,6 +925,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         Ok(GasConfig {
             l1_gas_price: Some(fee_input_provider.l1_gas_price),
             l2_gas_price: Some(fee_input_provider.l2_gas_price),
+            l1_pubdata_price: Some(fee_input_provider.l1_pubdata_price),
             estimation: Some(gas::Estimation {
                 price_scale_factor: Some(fee_input_provider.estimate_gas_price_scale_factor),
                 limit_scale_factor: Some(fee_input_provider.estimate_gas_scale_factor),
@@ -1815,8 +1816,7 @@ pub fn load_last_l1_batch<S: ReadStorage>(storage: StoragePtr<S>) -> Option<(u64
 mod tests {
     use ethabi::{Token, Uint};
     use gas::DEFAULT_FAIR_PUBDATA_PRICE;
-    use zksync_types::Nonce;
-    use zksync_types::{utils::deployed_address_create, K256PrivateKey};
+    use zksync_types::{utils::deployed_address_create, K256PrivateKey, Nonce};
 
     use super::*;
     use crate::{
@@ -1936,6 +1936,7 @@ mod tests {
         let node: InMemoryNode<testing::ExternalStorage> = InMemoryNode::new(
             Some(ForkDetails {
                 fork_source: Box::new(mock_db),
+                chain_id: TEST_NODE_NETWORK_ID.into(),
                 l1_block: L1BatchNumber(1),
                 l2_block: Block::default(),
                 l2_miniblock: 2,

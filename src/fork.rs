@@ -81,12 +81,12 @@ impl ForkNetwork {
             ForkNetwork::Other(url) => url,
         }
     }
-
+    // TODO: This needs to be dynamic based on the network.
     /// Returns the local gas scale factors currently in use by the upstream network.
     pub fn local_gas_scale_factors(&self) -> (f64, f32) {
         match self {
-            ForkNetwork::Mainnet => (1.5, 1.2),
-            ForkNetwork::SepoliaTestnet => (2.0, 1.2),
+            ForkNetwork::Mainnet => (1.5, 1.4),
+            ForkNetwork::SepoliaTestnet => (2.0, 1.3),
             ForkNetwork::GoerliTestnet => (1.2, 1.2),
             ForkNetwork::Other(_) => (
                 DEFAULT_ESTIMATE_GAS_PRICE_SCALE_FACTOR,
@@ -127,12 +127,13 @@ impl<S: ForkSource> ForkStorage<S> {
         use_evm_emulator: bool,
         override_chain_id: Option<u32>,
     ) -> Self {
-        let chain_id = fork
-            .as_ref()
-            .and_then(|d| d.overwrite_chain_id)
-            .unwrap_or(L2ChainId::from(
-                override_chain_id.unwrap_or(TEST_NODE_NETWORK_ID),
-            ));
+        let chain_id = if let Some(override_id) = override_chain_id {
+            L2ChainId::from(override_id)
+        } else {
+            fork.as_ref()
+                .and_then(|d| d.overwrite_chain_id)
+                .unwrap_or(L2ChainId::from(TEST_NODE_NETWORK_ID))
+        };
         tracing::info!("Starting network with chain id: {:?}", chain_id);
 
         ForkStorage {
@@ -398,6 +399,8 @@ pub trait ForkSource {
 pub struct ForkDetails {
     // Source of the fork data (for example HttpForkSource)
     pub fork_source: Box<dyn ForkSource + Send + Sync>,
+    // Chain ID of fork
+    pub chain_id: L2ChainId,
     // Block number at which we forked (the next block to create is l1_block + 1)
     pub l1_block: L1BatchNumber,
     // The actual L2 block
@@ -453,6 +456,7 @@ pub fn supported_versions_to_string() -> String {
 impl fmt::Debug for ForkDetails {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ForkDetails")
+            .field("chain_id", &self.chain_id)
             .field("l1_block", &self.l1_block)
             .field("l2_block", &self.l2_block)
             .field("l2_miniblock", &self.l2_miniblock)
@@ -524,6 +528,7 @@ impl ForkDetails {
 
         Ok(ForkDetails {
             fork_source: Box::new(HttpForkSource::new(url.to_owned(), cache_config.clone())),
+            chain_id: chain_id.unwrap_or_else(|| L2ChainId::from(TEST_NODE_NETWORK_ID)),
             l1_block: l1_batch_number,
             l2_block: block,
             block_timestamp: block_details.base.timestamp,
@@ -545,12 +550,15 @@ impl ForkDetails {
     /// Create a fork from a given network at a given height.
     pub async fn from_network(
         fork: &str,
-        fork_at: Option<u64>,
+        fork_block_number: Option<u64>,
         cache_config: CacheConfig,
     ) -> eyre::Result<Self> {
         let (network, client) = Self::fork_network_and_client(fork)?;
-        let l2_miniblock = if let Some(fork_at) = fork_at {
-            fork_at
+        let chain_id_u64 = client.chain_id().await?;
+        let chain_id = L2ChainId::from(chain_id_u64.as_u32());
+
+        let l2_miniblock = if let Some(fork_block_number) = fork_block_number {
+            fork_block_number
         } else {
             match client.get_block_number().await {
                 Ok(bn) => bn.as_u64(),
@@ -559,11 +567,12 @@ impl ForkDetails {
                 }
             }
         };
+
         Self::from_network_and_miniblock_and_chain(
             network,
             client,
             l2_miniblock,
-            None,
+            chain_id.into(),
             cache_config,
         )
         .await
@@ -604,7 +613,7 @@ impl ForkDetails {
     /// Return URL and HTTP client for `hardhat_reset`.
     pub fn from_url(
         url: String,
-        fork_at: Option<u64>,
+        fork_block_number: Option<u64>,
         cache_config: CacheConfig,
     ) -> eyre::Result<Self> {
         let parsed_url = SensitiveUrl::from_str(&url)?;
@@ -612,8 +621,10 @@ impl ForkDetails {
         let client = builder.build();
 
         block_on(async move {
-            let l2_miniblock = if let Some(fork_at) = fork_at {
-                fork_at
+            let chain_id_u64 = client.chain_id().await?;
+            let chain_id = L2ChainId::from(chain_id_u64.as_u32());
+            let l2_miniblock = if let Some(fork_block_number) = fork_block_number {
+                fork_block_number
             } else {
                 client.get_block_number().await?.as_u64()
             };
@@ -622,7 +633,7 @@ impl ForkDetails {
                 ForkNetwork::Other(url),
                 client,
                 l2_miniblock,
-                None,
+                chain_id.into(),
                 cache_config,
             )
             .await
@@ -736,6 +747,7 @@ mod tests {
         DEFAULT_ESTIMATE_GAS_PRICE_SCALE_FACTOR, DEFAULT_ESTIMATE_GAS_SCALE_FACTOR,
         DEFAULT_FAIR_PUBDATA_PRICE, DEFAULT_L2_GAS_PRICE,
     };
+    use crate::node::TEST_NODE_NETWORK_ID;
     use crate::{deps::InMemoryStorage, system_contracts, testing};
 
     use super::{ForkDetails, ForkStorage};
@@ -758,6 +770,7 @@ mod tests {
 
         let fork_details = ForkDetails {
             fork_source: Box::new(external_storage),
+            chain_id: TEST_NODE_NETWORK_ID.into(),
             l1_block: L1BatchNumber(1),
             l2_block: zksync_types::api::Block::<TransactionVariant>::default(),
             l2_miniblock: 1,
@@ -793,6 +806,7 @@ mod tests {
             fork_source: Box::new(testing::ExternalStorage {
                 raw_storage: InMemoryStorage::default(),
             }),
+            chain_id: TEST_NODE_NETWORK_ID.into(),
             l1_block: L1BatchNumber(0),
             l2_block: zksync_types::api::Block::<TransactionVariant>::default(),
             l2_miniblock: 0,

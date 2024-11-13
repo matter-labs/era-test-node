@@ -10,9 +10,9 @@ use zksync_types::{
     },
     fee::Fee,
     utils::storage_key_for_standard_token_balance,
-    ExecuteTransactionCommon, ProtocolVersionId, Transaction, H160, L2_BASE_TOKEN_ADDRESS,
+    AccountTreeId, Address, ExecuteTransactionCommon, L1BatchNumber, L2BlockNumber,
+    ProtocolVersionId, Transaction, H160, H256, L2_BASE_TOKEN_ADDRESS, U256,
 };
-use zksync_types::{AccountTreeId, Address, L1BatchNumber, L2BlockNumber, H256, U256};
 use zksync_utils::h256_to_u256;
 use zksync_web3_decl::error::Web3Error;
 
@@ -578,18 +578,22 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> ZksNamespa
 mod tests {
     use std::str::FromStr;
 
-    use crate::config::cache::CacheConfig;
-    use crate::fork::ForkDetails;
-    use crate::node::TEST_NODE_NETWORK_ID;
-    use crate::testing;
-    use crate::testing::{ForkBlockConfig, MockServer};
-    use crate::{http_fork_source::HttpForkSource, node::InMemoryNode};
+    use zksync_types::{
+        api::{self, Block, TransactionReceipt, TransactionVariant},
+        transaction_request::CallRequest,
+        Address, H160, H256,
+    };
+    use zksync_utils::u256_to_h256;
 
     use super::*;
-    use zksync_types::api::{self, Block, TransactionReceipt, TransactionVariant};
-    use zksync_types::transaction_request::CallRequest;
-    use zksync_types::{Address, H160, H256};
-    use zksync_utils::u256_to_h256;
+    use crate::{
+        config::cache::CacheConfig,
+        fork::ForkDetails,
+        http_fork_source::HttpForkSource,
+        node::{InMemoryNode, TEST_NODE_NETWORK_ID},
+        testing,
+        testing::{ForkBlockConfig, MockServer},
+    };
 
     #[tokio::test]
     async fn test_estimate_fee() {
@@ -621,10 +625,10 @@ mod tests {
 
         let result = node.estimate_fee(mock_request).await.unwrap();
 
-        assert_eq!(result.gas_limit, U256::from(4490368));
-        assert_eq!(result.max_fee_per_gas, U256::from(37500000));
+        assert_eq!(result.gas_limit, U256::from(279779));
+        assert_eq!(result.max_fee_per_gas, U256::from(45250000));
         assert_eq!(result.max_priority_fee_per_gas, U256::from(0));
-        assert_eq!(result.gas_per_pubdata_limit, U256::from(50000));
+        assert_eq!(result.gas_per_pubdata_limit, U256::from(1658));
     }
 
     #[tokio::test]
@@ -890,7 +894,7 @@ mod tests {
             l2_erc20_default_bridge: Some(H160::repeat_byte(0x2)),
             l1_weth_bridge: Some(H160::repeat_byte(0x3)),
             l2_weth_bridge: Some(H160::repeat_byte(0x4)),
-            l2_legacy_shared_bridge: Some(H160::repeat_byte(0x7)),
+            l2_legacy_shared_bridge: Some(H160::repeat_byte(0x6)),
         };
         mock_server.expect(
             serde_json::json!({
@@ -1162,6 +1166,19 @@ mod tests {
             serde_json::json!({
                 "jsonrpc": "2.0",
                 "id": 0,
+                "method": "eth_chainId",
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 0,
+                "result": "0x104",
+            }),
+        );
+
+        mock_server.expect(
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
                 "method": "zks_getBlockDetails",
                 "params": [1]
             }),
@@ -1190,13 +1207,13 @@ mod tests {
                     "status": "verified",
                     "timestamp": 1000
                 },
-                "id": 0
+                "id": 1
             }),
         );
         mock_server.expect(
             serde_json::json!({
                 "jsonrpc": "2.0",
-                "id": 1,
+                "id": 2,
                 "method": "eth_getBlockByHash",
                 "params": ["0xdaa77426c30c02a43d9fba4e841a6556c524d47030762eb14dc4af897e605d9b", true]
             }),
@@ -1228,7 +1245,7 @@ mod tests {
                     "transactionsRoot": "0x0000000000000000000000000000000000000000000000000000000000000000",
                     "uncles": []
                 },
-                "id": 1
+                "id": 2
             }),
         );
         mock_server.expect(
@@ -1255,7 +1272,7 @@ mod tests {
         mock_server.expect(
             serde_json::json!({
                 "jsonrpc": "2.0",
-                "id": 2,
+                "id": 3,
                 "method": "zks_getFeeParams",
             }),
             serde_json::json!({
@@ -1274,7 +1291,7 @@ mod tests {
                   "l1_pubdata_price": 100780475095u64
                 }
               },
-              "id": 2
+              "id": 3
             }),
         );
 
@@ -1288,6 +1305,7 @@ mod tests {
             Default::default(),
             Default::default(),
         );
+
         {
             let inner = node.get_inner();
             let writer = inner.write().unwrap();

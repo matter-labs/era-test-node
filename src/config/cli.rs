@@ -75,7 +75,7 @@ pub struct Cli {
     pub dev_system_contracts: Option<DevSystemContracts>,
 
     /// Enables EVM emulation. Currently, this requires local system contracts because there is no canonical EVM interpreter released yet.
-    #[arg(long, requires = "dev-system-contracts")]
+    #[arg(long, requires = "dev_system_contracts")]
     pub emulate_evm: bool,
 
     /// Log filter level - default: info
@@ -104,6 +104,11 @@ pub struct Cli {
     /// Use a given chain id. If not set uses 260 (or the one from the forked network).
     #[arg(long)]
     pub chain_id: Option<u32>,
+
+    /// Run the node in offline mode. This will disable all network requests.
+    /// Can only be run alongside `run` command.
+    #[arg(long)]
+    pub offline: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -125,13 +130,18 @@ pub struct ForkArgs {
     /// If not set - will start a new network from genesis.
     /// If set - will try to fork a remote network. Possible values:
     ///  - mainnet
-    ///  - testnet
+    ///  - sepolia-testnet
     ///  - http://XXX:YY
     pub network: String,
-    #[arg(long)]
     // Fork at a given L2 miniblock height.
     // If not set - will use the current finalized block from the network.
-    pub fork_at: Option<u64>,
+    #[arg(
+        long,
+        value_name = "BLOCK",
+        long_help = "Fetch state from a specific block number over a remote endpoint.",
+        alias = "fork-at"
+    )]
+    pub fork_block_number: Option<u64>,
 }
 
 #[derive(Debug, Parser)]
