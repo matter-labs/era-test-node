@@ -9,8 +9,9 @@ use crate::deps::InMemoryStorage;
 use crate::node::{InMemoryNode, TxExecutionInfo};
 use crate::{fork::ForkSource, node::compute_hash};
 
+use alloy_contract::contract;
 use ethabi::{ParamType, Token};
-use ethers::contract;
+
 use eyre::eyre;
 use httptest::{
     matchers::{eq, json_decoded, request},
@@ -503,8 +504,8 @@ pub fn deploy_contract<T: ForkSource + std::fmt::Debug + Clone>(
     calldata: Option<Vec<u8>>,
     nonce: Nonce,
 ) -> H256 {
-    use ethers::abi::Function;
-    use ethers::types::Bytes;
+    use alloy_json_abi::Function;
+    use alloy_primitives::Bytes;
     use zksync_web3_rs::eip712;
 
     let next_miniblock = node

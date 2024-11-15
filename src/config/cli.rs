@@ -127,6 +127,30 @@ pub struct Cli {
     #[arg(long, help_heading = "Cache Options")]
     /// Cache directory location for disk cache (default: .cache).
     pub cache_dir: Option<String>,
+
+    /// BIP39 mnemonic phrase used for generating accounts.
+    /// Cannot be used if `mnemonic_random` or `mnemonic_seed` are used.
+    #[arg(long, short, help_heading = "Account Configuration", conflicts_with_all = &["mnemonic_seed", "mnemonic_random"])]
+    pub mnemonic: Option<String>,
+
+    /// Automatically generates a BIP39 mnemonic phrase and derives accounts from it.
+    /// Cannot be used with other `mnemonic` options.
+    /// You can specify the number of words you want in the mnemonic.
+    /// [default: 12]
+    #[arg(long, help_heading = "Account Configuration", conflicts_with_all = &["mnemonic", "mnemonic_seed"], default_missing_value = "12", num_args(0..=1))]
+    pub mnemonic_random: Option<usize>,
+
+    /// Generates a BIP39 mnemonic phrase from a given seed.
+    /// Cannot be used with other `mnemonic` options.
+    /// CAREFUL: This is NOT SAFE and should only be used for testing.
+    /// Never use the private keys generated in production.
+    #[arg(long = "mnemonic-seed-unsafe", help_heading = "Account Configuration", conflicts_with_all = &["mnemonic", "mnemonic_random"])]
+    pub mnemonic_seed: Option<u64>,
+
+    /// Sets the derivation path of the child key to be derived.
+    /// [default: m/44'/60'/0'/0/]
+    #[arg(long, help_heading = "Account Configuration")]
+    pub derivation_path: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]

@@ -20,6 +20,7 @@ zksync_web3_decl = { git = "https://github.com/matter-labs/zksync-era.git", rev 
 ] }
 sha3 = "0.10.6"
 
+alloy-signer-local = { version = "0.6.4", features = ["mnemonic"] }
 
 openssl-sys = { version = "0.9", features = ["vendored"] }
 
@@ -63,7 +64,10 @@ httptest = "0.15.4"
 tempdir = "0.3.7"
 maplit = "1.0.2"
 zksync-web3-rs = "0.1.1"
-ethers = { version = "2.0.4", features = ["rustls"] }
+alloy-contract = { version = "0.6.4", default-features = false }
+alloy-primitives = "0.8.11"
+alloy-json-abi = "0.8.11"
+
 jsonschema = "0.26.0"
 schemars = "0.8.21"
 openrpc-types = "0.4.0"

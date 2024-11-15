@@ -233,7 +233,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> DebugNames
 
 #[cfg(test)]
 mod tests {
-    use ethers::abi::{short_signature, AbiEncode, HumanReadableParser, ParamType, Token};
+    use alloy_json_abi::{short_signature, AbiEncode, HumanReadableParser, ParamType, Token};
     use zksync_types::{
         api::{Block, CallTracerConfig, SupportedTracers, TransactionReceipt},
         transaction_request::CallRequestBuilder,

@@ -8,10 +8,14 @@ use crate::config::{
     show_details::*,
 };
 
+use alloy_signer_local::{
+    coins_bip39::{English, Mnemonic},
+    MnemonicBuilder, PrivateKeySigner,
+};
 use cli::Cli;
 use observability::LogLevel;
 use serde::Deserialize;
-
+use zksync_web3_rs::core::rand::thread_rng;
 pub mod cache;
 pub mod cli;
 pub mod constants;
@@ -58,6 +62,8 @@ pub struct TestNodeConfig {
     pub log_file_path: String,
     /// Cache configuration for the test node
     pub cache_config: CacheConfig,
+    /// The generator used to generate the dev accounts
+    pub account_generator: Option<AccountGenerator>,
 }
 
 impl Default for TestNodeConfig {
@@ -89,6 +95,9 @@ impl Default for TestNodeConfig {
 
             // Cache configuration default
             cache_config: Default::default(),
+
+            // Account generator
+            account_generator: None,
         }
     }
 }
@@ -423,5 +432,63 @@ impl TestNodeConfig {
                 },
             };
         }
+    }
+}
+
+/// Can create dev accounts
+#[derive(Clone, Debug, Deserialize)]
+pub struct AccountGenerator {
+    chain_id: u32,
+    amount: usize,
+    phrase: String,
+    derivation_path: Option<String>,
+}
+
+impl AccountGenerator {
+    pub fn new(amount: usize) -> Self {
+        Self {
+            chain_id: TEST_NODE_NETWORK_ID.into(),
+            amount,
+            phrase: Mnemonic::<English>::new(&mut thread_rng()).to_phrase(),
+            derivation_path: None,
+        }
+    }
+
+    #[must_use]
+    pub fn phrase(mut self, phrase: impl Into<String>) -> Self {
+        self.phrase = phrase.into();
+        self
+    }
+
+    #[must_use]
+    pub fn chain_id(mut self, chain_id: impl Into<u32>) -> Self {
+        self.chain_id = chain_id.into();
+        self
+    }
+
+    #[must_use]
+    pub fn derivation_path(mut self, derivation_path: impl Into<String>) -> Self {
+        let mut derivation_path = derivation_path.into();
+        if !derivation_path.ends_with('/') {
+            derivation_path.push('/');
+        }
+        self.derivation_path = Some(derivation_path);
+        self
+    }
+
+    pub fn gen(&self) -> Vec<PrivateKeySigner> {
+        let builder = MnemonicBuilder::<English>::default().phrase(self.phrase.as_str());
+
+        let derivation_path = self.derivation_path.as_deref().unwrap_or("m/44'/60'/0'/0/");
+
+        (0..self.amount)
+            .map(|idx| {
+                let builder = builder
+                    .clone()
+                    .derivation_path(format!("{derivation_path}{idx}"))
+                    .unwrap();
+                builder.build().unwrap().with_chain_id(Some(self.chain_id))
+            })
+            .collect()
     }
 }
