@@ -198,12 +198,23 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
         observability: Option<Observability>,
         config: &TestNodeConfig,
     ) -> Self {
+        let mut updated_config = config.clone();
+
         if let Some(f) = &fork {
             let mut block_hashes = HashMap::<u64, H256>::new();
             block_hashes.insert(f.l2_block.number.as_u64(), f.l2_block.hash);
             let mut blocks = HashMap::<H256, Block<TransactionVariant>>::new();
             blocks.insert(f.l2_block.hash, f.l2_block.clone());
-            // TODO: review usage of .overrides for gas params?
+
+            // Update the config fields from fork details
+            updated_config = updated_config
+                .with_l1_gas_price(Some(f.l1_gas_price))
+                .with_l2_gas_price(Some(f.l2_fair_gas_price))
+                .with_l1_pubdata_price(Some(f.fair_pubdata_price))
+                .with_price_scale(Some(f.estimate_gas_price_scale_factor))
+                .with_gas_limit_scale(Some(f.estimate_gas_scale_factor))
+                .with_chain_id(Some(f.chain_id.as_u64() as u32));
+
             let fee_input_provider = if let Some(params) = f.fee_params {
                 TestNodeFeeInputProvider::from_fee_params_and_estimate_scale_factors(
                     params,
@@ -229,15 +240,15 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
                 filters: Default::default(),
                 fork_storage: ForkStorage::new(
                     fork,
-                    &config.system_contracts_options.clone(),
-                    config.use_evm_emulator,
-                    config.chain_id,
+                    &updated_config.system_contracts_options,
+                    updated_config.use_evm_emulator,
+                    updated_config.chain_id,
                 ),
-                config: config.clone(),
+                config: updated_config.clone(),
                 console_log_handler: ConsoleLogHandler::default(),
                 system_contracts: SystemContracts::from_options(
-                    &config.system_contracts_options,
-                    config.clone().use_evm_emulator,
+                    &updated_config.system_contracts_options,
+                    updated_config.use_evm_emulator,
                 ),
                 impersonated_accounts: Default::default(),
                 rich_accounts: HashSet::new(),
@@ -253,8 +264,8 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
                 block_hash,
                 create_empty_block(0, NON_FORK_FIRST_BLOCK_TIMESTAMP, 0, None),
             );
-            // TODO: review usage of .overrides for gas params?
             let fee_input_provider = TestNodeFeeInputProvider::default();
+
             InMemoryNodeInner {
                 current_timestamp: NON_FORK_FIRST_BLOCK_TIMESTAMP,
                 current_batch: 0,
@@ -269,7 +280,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
                     fork,
                     &config.system_contracts_options,
                     config.use_evm_emulator,
-                    config.chain_id,
+                    updated_config.chain_id,
                 ),
                 config: config.clone(),
                 console_log_handler: ConsoleLogHandler::default(),
