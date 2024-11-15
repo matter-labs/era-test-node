@@ -587,7 +587,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        config::{CacheConfig, TEST_NODE_NETWORK_ID},
+        config::{cache::CacheConfig, constants::TEST_NODE_NETWORK_ID},
         fork::ForkDetails,
         http_fork_source::HttpForkSource,
         node::InMemoryNode,

@@ -1471,7 +1471,7 @@ mod tests {
     use super::*;
     use crate::node::NON_FORK_FIRST_BLOCK_TIMESTAMP;
     use crate::{
-        config::{CacheConfig, DEFAULT_L2_GAS_PRICE},
+        config::{cache::CacheConfig, constants::DEFAULT_L2_GAS_PRICE},
         fork::ForkDetails,
         http_fork_source::HttpForkSource,
         node::{compute_hash, InMemoryNode, Snapshot},

@@ -49,10 +49,12 @@ use zksync_web3_decl::error::Web3Error;
 use crate::{
     bootloader_debug::{BootloaderDebug, BootloaderDebugTracer},
     config::{
-        CacheConfig, ShowCalls, ShowGasDetails, ShowStorageLogs, ShowVMDetails, TestNodeConfig,
+        cache::CacheConfig,
+        constants::{LEGACY_RICH_WALLETS, RICH_WALLETS},
+        show_details::{ShowCalls, ShowGasDetails, ShowStorageLogs, ShowVMDetails},
+        TestNodeConfig,
     },
     console_log::ConsoleLogHandler,
-    constants::{LEGACY_RICH_WALLETS, RICH_WALLETS},
     deps::{storage_view::StorageView, InMemoryStorage},
     filters::EthFilters,
     fork::{ForkDetails, ForkSource, ForkStorage},
@@ -1789,9 +1791,11 @@ mod tests {
     use super::*;
     use crate::{
         config::{
-            TestNodeConfig, DEFAULT_ESTIMATE_GAS_PRICE_SCALE_FACTOR,
-            DEFAULT_ESTIMATE_GAS_SCALE_FACTOR, DEFAULT_FAIR_PUBDATA_PRICE, DEFAULT_L2_GAS_PRICE,
-            TEST_NODE_NETWORK_ID,
+            constants::{
+                DEFAULT_ESTIMATE_GAS_PRICE_SCALE_FACTOR, DEFAULT_ESTIMATE_GAS_SCALE_FACTOR,
+                DEFAULT_FAIR_PUBDATA_PRICE, DEFAULT_L2_GAS_PRICE, TEST_NODE_NETWORK_ID,
+            },
+            TestNodeConfig,
         },
         http_fork_source::HttpForkSource,
         node::InMemoryNode,

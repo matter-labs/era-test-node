@@ -14,7 +14,7 @@ use std::{
 use tokio::sync::RwLock;
 use tracing::warn;
 
-use crate::{cache::Cache, config::CacheConfig};
+use crate::{cache::Cache, config::cache::CacheConfig};
 
 static SELECTOR_DATABASE_URL: &str = "https://api.openchain.xyz/signature-database/v1/lookup";
 

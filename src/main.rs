@@ -4,8 +4,11 @@ use bytecode_override::override_bytecodes;
 use clap::Parser;
 use colored::Colorize;
 use config::cli::{Cli, Command};
+use config::constants::{
+    DEFAULT_ESTIMATE_GAS_PRICE_SCALE_FACTOR, DEFAULT_ESTIMATE_GAS_SCALE_FACTOR,
+    LEGACY_RICH_WALLETS, RICH_WALLETS,
+};
 use config::TestNodeConfig;
-use config::{DEFAULT_ESTIMATE_GAS_PRICE_SCALE_FACTOR, DEFAULT_ESTIMATE_GAS_SCALE_FACTOR};
 use fork::{ForkDetails, ForkSource};
 use http_fork_source::HttpForkSource;
 use logging_middleware::LoggingMiddleware;
@@ -16,7 +19,6 @@ mod bytecode_override;
 mod cache;
 mod config;
 mod console_log;
-mod constants;
 mod deps;
 mod filters;
 mod fork;
@@ -49,7 +51,6 @@ use futures::{
 use jsonrpc_core::MetaIoHandler;
 use zksync_types::H160;
 
-use crate::constants::{LEGACY_RICH_WALLETS, RICH_WALLETS};
 use crate::namespaces::{
     AnvilNamespaceT, ConfigurationApiNamespaceT, DebugNamespaceT, EthNamespaceT,
     EthTestNodeNamespaceT, EvmNamespaceT, HardhatNamespaceT, NetNamespaceT, Web3NamespaceT,

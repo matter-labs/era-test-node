@@ -1,7 +1,7 @@
 use zksync_types::U256;
 
 use crate::{
-    config::TEST_NODE_NETWORK_ID,
+    config::constants::TEST_NODE_NETWORK_ID,
     fork::ForkSource,
     namespaces::{NetNamespaceT, Result},
     node::InMemoryNode,

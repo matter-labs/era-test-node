@@ -38,8 +38,11 @@ use zksync_web3_decl::{
 use zksync_web3_decl::{namespaces::EthNamespaceClient, types::Index};
 
 use crate::config::{
-    CacheConfig, DEFAULT_ESTIMATE_GAS_PRICE_SCALE_FACTOR, DEFAULT_ESTIMATE_GAS_SCALE_FACTOR,
-    DEFAULT_FAIR_PUBDATA_PRICE, TEST_NODE_NETWORK_ID,
+    cache::CacheConfig,
+    constants::{
+        DEFAULT_ESTIMATE_GAS_PRICE_SCALE_FACTOR, DEFAULT_ESTIMATE_GAS_SCALE_FACTOR,
+        DEFAULT_FAIR_PUBDATA_PRICE, TEST_NODE_NETWORK_ID,
+    },
 };
 use crate::system_contracts;
 
@@ -741,8 +744,11 @@ mod tests {
     use zksync_types::{AccountTreeId, L1BatchNumber, H256};
 
     use crate::config::{
-        CacheConfig, DEFAULT_ESTIMATE_GAS_PRICE_SCALE_FACTOR, DEFAULT_ESTIMATE_GAS_SCALE_FACTOR,
-        DEFAULT_FAIR_PUBDATA_PRICE, DEFAULT_L2_GAS_PRICE, TEST_NODE_NETWORK_ID,
+        cache::CacheConfig,
+        constants::{
+            DEFAULT_ESTIMATE_GAS_PRICE_SCALE_FACTOR, DEFAULT_ESTIMATE_GAS_SCALE_FACTOR,
+            DEFAULT_FAIR_PUBDATA_PRICE, DEFAULT_L2_GAS_PRICE, TEST_NODE_NETWORK_ID,
+        },
     };
     use crate::{deps::InMemoryStorage, system_contracts, testing};
 

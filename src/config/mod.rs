@@ -2,36 +2,20 @@ use std::{env, fs::read_to_string, path::PathBuf};
 
 use crate::{observability, system_contracts};
 
-use clap::{Parser, ValueEnum};
+use crate::config::{
+    cache::{CacheConfig, CacheType},
+    constants::*,
+    show_details::*,
+};
+
 use cli::Cli;
 use observability::LogLevel;
 use serde::Deserialize;
-use std::{fmt::Display, str::FromStr};
 
+pub mod cache;
 pub mod cli;
-
-/// Directory where configuration files are stored
-pub const CONFIG_DIR: &str = ".era_test_node";
-/// Default name of the configuration file
-pub const CONFIG_FILE_NAME: &str = "config.toml";
-/// Default directory for disk cache
-pub const DEFAULT_DISK_CACHE_DIR: &str = ".cache";
-/// Default L1 gas price for transactions
-pub const DEFAULT_L1_GAS_PRICE: u64 = 14_932_364_075;
-/// Default L2 gas price for transactions if not provided via CLI
-pub const DEFAULT_L2_GAS_PRICE: u64 = 45_250_000;
-/// Default price for fair pubdata based on predefined value
-pub const DEFAULT_FAIR_PUBDATA_PRICE: u64 = 13_607_659_111;
-/// Scale factor for estimating L1 gas prices
-pub const DEFAULT_ESTIMATE_GAS_PRICE_SCALE_FACTOR: f64 = 2.0;
-/// Scale factor for estimating gas limits
-pub const DEFAULT_ESTIMATE_GAS_SCALE_FACTOR: f32 = 1.3;
-/// Default port for the test node server
-pub const NODE_PORT: u16 = 8011;
-/// Network ID for the test node
-pub const TEST_NODE_NETWORK_ID: u32 = 260;
-/// Default log file path for the test node
-pub const DEFAULT_LOG_FILE_PATH: &str = "era_test_node.log";
+pub mod constants;
+pub mod show_details;
 
 /// Defines the configuration parameters for the [InMemoryNode].
 #[derive(Deserialize, Debug, Clone)]
@@ -337,7 +321,6 @@ impl TestNodeConfig {
         self.show_vm_details
     }
 
-    // TODO: do we need this?
     /// Override the config with values provided by [`Cli`].
     pub fn override_with_opts(&mut self, opt: &Cli) {
         // [`NodeConfig`].
@@ -394,6 +377,15 @@ impl TestNodeConfig {
         if let Some(l2_gas_price) = &opt.l2_gas_price {
             self.l2_gas_price = Some(*l2_gas_price);
         }
+        if let Some(l1_pubdata_price) = &opt.l1_pubdata_price {
+            self.l1_pubdata_price = Some(*l1_pubdata_price);
+        }
+        if let Some(price_scale) = &opt.price_scale_factor {
+            self.price_scale_factor = Some(*price_scale);
+        }
+        if let Some(limit_scale) = &opt.limit_scale_factor {
+            self.limit_scale_factor = Some(*limit_scale);
+        }
 
         // [`LogConfig`].
         if let Some(log_level) = &opt.log {
@@ -413,163 +405,6 @@ impl TestNodeConfig {
                     reset: opt.reset_cache.unwrap_or_default(),
                 },
             };
-        }
-    }
-}
-
-#[derive(
-    Deserialize, Debug, Default, clap::Parser, Copy, Clone, clap::ValueEnum, PartialEq, Eq,
-)]
-pub enum ShowCalls {
-    #[default]
-    None,
-    User,
-    System,
-    All,
-}
-
-impl FromStr for ShowCalls {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_ref() {
-            "none" => Ok(ShowCalls::None),
-            "user" => Ok(ShowCalls::User),
-            "system" => Ok(ShowCalls::System),
-            "all" => Ok(ShowCalls::All),
-            _ => Err(format!(
-                "Unknown ShowCalls value {} - expected one of none|user|system|all.",
-                s
-            )),
-        }
-    }
-}
-
-impl Display for ShowCalls {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(f, "{:?}", self)
-    }
-}
-
-#[derive(Deserialize, Debug, Default, Parser, Copy, Clone, clap::ValueEnum, PartialEq, Eq)]
-pub enum ShowStorageLogs {
-    #[default]
-    None,
-    Read,
-    Write,
-    Paid,
-    All,
-}
-
-impl FromStr for ShowStorageLogs {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_ref() {
-            "none" => Ok(ShowStorageLogs::None),
-            "read" => Ok(ShowStorageLogs::Read),
-            "write" => Ok(ShowStorageLogs::Write),
-            "paid" => Ok(ShowStorageLogs::Paid),
-            "all" => Ok(ShowStorageLogs::All),
-            _ => Err(format!(
-                "Unknown ShowStorageLogs value {} - expected one of none|read|write|paid|all.",
-                s
-            )),
-        }
-    }
-}
-
-impl Display for ShowStorageLogs {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(f, "{:?}", self)
-    }
-}
-
-#[derive(Deserialize, Debug, Default, Parser, Copy, Clone, clap::ValueEnum, PartialEq, Eq)]
-pub enum ShowVMDetails {
-    #[default]
-    None,
-    All,
-}
-
-impl FromStr for ShowVMDetails {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_ref() {
-            "none" => Ok(ShowVMDetails::None),
-            "all" => Ok(ShowVMDetails::All),
-            _ => Err(format!(
-                "Unknown ShowVMDetails value {} - expected one of none|all.",
-                s
-            )),
-        }
-    }
-}
-
-impl Display for ShowVMDetails {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(f, "{:?}", self)
-    }
-}
-
-#[derive(Deserialize, Debug, Default, Parser, Copy, Clone, clap::ValueEnum, PartialEq, Eq)]
-pub enum ShowGasDetails {
-    #[default]
-    None,
-    All,
-}
-
-impl FromStr for ShowGasDetails {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_ref() {
-            "none" => Ok(ShowGasDetails::None),
-            "all" => Ok(ShowGasDetails::All),
-            _ => Err(format!(
-                "Unknown ShowGasDetails value {} - expected one of none|all.",
-                s
-            )),
-        }
-    }
-}
-
-impl Display for ShowGasDetails {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(f, "{:?}", self)
-    }
-}
-
-/// Cache type config for the node.
-#[derive(ValueEnum, Deserialize, Default, Debug, Copy, Clone)]
-pub enum CacheType {
-    None,
-    Memory,
-    #[default]
-    Disk,
-}
-
-/// Cache configuration. Can be one of:
-///
-/// None    : Caching is disabled
-/// Memory  : Caching is provided in-memory and not persisted across runs
-/// Disk    : Caching is persisted on disk in the provided directory and can be reset
-#[derive(Deserialize, Debug, Clone)]
-pub enum CacheConfig {
-    #[serde(rename = "none")]
-    None,
-    #[serde(rename = "memory")]
-    Memory,
-    #[serde(rename = "disk")]
-    Disk { dir: String, reset: bool },
-}
-
-impl Default for CacheConfig {
-    fn default() -> Self {
-        Self::Disk {
-            dir: String::from(DEFAULT_DISK_CACHE_DIR),
-            reset: false,
         }
     }
 }
