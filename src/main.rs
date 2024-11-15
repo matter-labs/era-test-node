@@ -145,7 +145,7 @@ async fn main() -> anyhow::Result<()> {
                             .with_l2_gas_price(Some(fee_v2.config().minimal_l2_gas_price))
                             .with_price_scale(Some(DEFAULT_ESTIMATE_GAS_PRICE_SCALE_FACTOR))
                             .with_gas_limit_scale(Some(DEFAULT_ESTIMATE_GAS_SCALE_FACTOR))
-                            .with_l1_pubdata_price(fee_v2.l1_pubdata_price());
+                            .with_l1_pubdata_price(Some(fee_v2.l1_pubdata_price()));
                     }
                     FeeParams::V1(_) => {
                         return Err(anyhow!("Unsupported FeeParams::V1 in this context"));

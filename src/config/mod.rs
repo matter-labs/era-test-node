@@ -36,6 +36,8 @@ pub struct TestNodeConfig {
     pub resolve_hashes: bool,
     /// Configuration for system contracts
     pub system_contracts_options: system_contracts::Options,
+    /// Directory to override bytecodes
+    pub override_bytecodes_dir: Option<String>,
     /// Enables EVM emulation mode
     pub use_evm_emulator: bool,
     /// Optional chain ID for the node
@@ -70,6 +72,7 @@ impl Default for TestNodeConfig {
             show_gas_details: Default::default(),
             resolve_hashes: false,
             system_contracts_options: Default::default(),
+            override_bytecodes_dir: None,
             use_evm_emulator: false,
             chain_id: Some(TEST_NODE_NETWORK_ID),
 
@@ -153,6 +156,20 @@ impl TestNodeConfig {
         self.system_contracts_options
     }
 
+    /// Set the override bytecodes directory
+    #[must_use]
+    pub fn with_override_bytecodes_dir(mut self, dir: Option<String>) -> Self {
+        if let Some(dir) = dir {
+            self.override_bytecodes_dir = Some(dir);
+        }
+        self
+    }
+
+    /// Get the override bytecodes directory
+    pub fn get_override_bytecodes_dir(&self) -> Option<&String> {
+        self.override_bytecodes_dir.as_ref()
+    }
+
     /// Enable or disable EVM emulation
     #[must_use]
     pub fn with_evm_emulator(mut self, enable: Option<bool>) -> Self {
@@ -197,8 +214,8 @@ impl TestNodeConfig {
 
     /// Set the L1 pubdata price
     #[must_use]
-    pub fn with_l1_pubdata_price(mut self, price: u64) -> Self {
-        self.l1_pubdata_price = Some(price);
+    pub fn with_l1_pubdata_price(mut self, price: Option<u64>) -> Self {
+        self.l1_pubdata_price = price;
         self
     }
 

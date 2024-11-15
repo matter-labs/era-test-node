@@ -182,34 +182,35 @@ pub struct ReplayArgs {
 }
 
 impl Cli {
-    // TODO: address show log details related items
     /// Converts the CLI arguments into a `TestNodeConfig`.
     pub fn into_test_node_config(self) -> eyre::Result<TestNodeConfig> {
+        let vm_log_detail = if let Some(output) = self.show_outputs {
+            if output {
+                Some(ShowVMDetails::All)
+            } else {
+                Some(ShowVMDetails::None)
+            }
+        } else if let Some(logs) = self.show_storage_logs {
+            match logs {
+                ShowStorageLogs::None => Some(ShowVMDetails::None),
+                _ => Some(ShowVMDetails::All),
+            }
+        } else {
+            None
+        };
+
         let config = TestNodeConfig::default()
             .with_port(self.port)
             .with_l1_gas_price(self.l1_gas_price)
             .with_l2_gas_price(self.l2_gas_price)
+            .with_l1_pubdata_price(self.l1_pubdata_price)
             .with_show_calls(self.show_calls)
-            .with_vm_log_detail(self.show_outputs.map(|output| {
-                if output {
-                    ShowVMDetails::All
-                } else {
-                    ShowVMDetails::None
-                }
-            }))
-            .with_vm_log_detail(self.show_storage_logs.map(|logs| match logs {
-                ShowStorageLogs::None => ShowVMDetails::None,
-                _ => ShowVMDetails::All,
-            }))
-            .with_gas_limit_scale(self.show_gas_details.map(|details| {
-                if details == ShowGasDetails::All {
-                    1.5 // todo: use default values
-                } else {
-                    1.0 // todo: use default values
-                }
-            }))
+            .with_vm_log_detail(vm_log_detail)
+            .with_gas_limit_scale(self.limit_scale_factor)
+            .with_price_scale(self.price_scale_factor)
             .with_resolve_hashes(self.resolve_hashes)
             .with_system_contracts(self.dev_system_contracts)
+            .with_override_bytecodes_dir(self.override_bytecodes_dir.clone()) // Added
             .with_log_level(self.log)
             .with_log_file_path(self.log_file_path.clone())
             .with_cache_config(self.cache.map(|cache_type| {
@@ -227,6 +228,12 @@ impl Cli {
             }))
             .with_chain_id(self.chain_id)
             .with_evm_emulator(if self.emulate_evm { Some(true) } else { None });
+
+        if self.emulate_evm && self.dev_system_contracts != Some(SystemContractsOptions::Local) {
+            return Err(eyre::eyre!(
+                "EVM emulation requires the 'local' system contracts option."
+            ));
+        }
 
         if self.debug_mode {
             Ok(config
