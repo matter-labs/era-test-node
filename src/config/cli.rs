@@ -22,105 +22,109 @@ pub struct Cli {
     pub command: Option<Command>,
 
     // General Options
-    #[arg(short, long, help_heading = "general")]
+    #[arg(short, long, help_heading = "General Options")]
     /// Path to the configuration file. If not supplied, defaults will be used.
     pub config: Option<String>,
 
-    #[arg(long, default_value = "8011", help_heading = "network")]
+    #[arg(long, default_value = "8011", help_heading = "Network Options")]
     /// Port to listen on (default: 8011).
     pub port: Option<u16>,
 
-    #[arg(long, help_heading = "network")]
+    #[arg(long, help_heading = "Network Options")]
     /// Specify chain ID (default: 260).
     pub chain_id: Option<u32>,
 
-    #[arg(long, help_heading = "general")]
+    #[arg(long, help_heading = "General Options")]
     /// Run in offline mode (disables all network requests).
     pub offline: bool,
 
-    #[arg(short, long, help_heading = "debug")]
+    #[arg(short, long, help_heading = "Debugging Options")]
     /// Enable default settings for debugging contracts.
     pub debug_mode: bool,
 
     // Debugging Options
-    #[arg(long, help_heading = "debug")]
+    #[arg(long, help_heading = "Debugging Options")]
     /// Show call debug information.
     pub show_calls: Option<ShowCalls>,
 
-    #[arg(long, help_heading = "debug")]
+    #[arg(long, help_heading = "Debugging Options")]
     /// Show call output information.
     pub show_outputs: Option<bool>,
 
-    #[arg(long, help_heading = "debug")]
+    #[arg(long, help_heading = "Debugging Options")]
     /// Show storage log information.
     pub show_storage_logs: Option<ShowStorageLogs>,
 
-    #[arg(long, help_heading = "debug")]
+    #[arg(long, help_heading = "Debugging Options")]
     /// Show VM details information.
     pub show_vm_details: Option<ShowVMDetails>,
 
-    #[arg(long, help_heading = "debug")]
+    #[arg(long, help_heading = "Debugging Options")]
     /// Show gas details information.
     pub show_gas_details: Option<ShowGasDetails>,
 
-    #[arg(long, help_heading = "debug")]
+    #[arg(long, help_heading = "Debugging Options")]
     /// If true, the tool will try to resolve ABI and topic names for better readability.
     /// May decrease performance.
     pub resolve_hashes: Option<bool>,
 
     // Gas Configuration
-    #[arg(long, help_heading = "gas")]
+    #[arg(long, help_heading = "Gas Configuration")]
     /// Custom L1 gas price (in wei).
     pub l1_gas_price: Option<u64>,
 
-    #[arg(long, help_heading = "gas")]
+    #[arg(long, help_heading = "Gas Configuration")]
     /// Custom L2 gas price (in wei).
     pub l2_gas_price: Option<u64>,
 
-    #[arg(long, help_heading = "gas")]
+    #[arg(long, help_heading = "Gas Configuration")]
     /// Custom L1 pubdata price (in wei).
     pub l1_pubdata_price: Option<u64>,
 
-    #[arg(long, help_heading = "gas")]
+    #[arg(long, help_heading = "Gas Configuration")]
     /// Gas price estimation scale factor.
     pub price_scale_factor: Option<f64>,
 
-    #[arg(long, help_heading = "gas")]
+    #[arg(long, help_heading = "Gas Configuration")]
     /// Gas limit estimation scale factor.
     pub limit_scale_factor: Option<f32>,
 
-    #[arg(long, help_heading = "system")]
+    #[arg(long, help_heading = "System Configuration")]
     /// Directory to override bytecodes.
     pub override_bytecodes_dir: Option<String>,
 
     // System Configuration
-    #[arg(long, help_heading = "system")]
+    #[arg(long, help_heading = "System Configuration")]
     /// Option for system contracts (default: built-in).
     pub dev_system_contracts: Option<SystemContractsOptions>,
 
-    #[arg(long, requires = "dev_system_contracts", help_heading = "system")]
+    #[arg(
+        long,
+        requires = "dev_system_contracts",
+        help_heading = "System Configuration"
+    )]
     /// Enables EVM emulation. Requires local system contracts.
     pub emulate_evm: bool,
 
     // Logging Configuration
-    #[arg(long, help_heading = "logging")]
+    #[arg(long, help_heading = "Logging Configuration")]
     /// Log level (default: info).
     pub log: Option<LogLevel>,
 
-    #[arg(long, help_heading = "logging")]
+    #[arg(long, help_heading = "Logging Configuration")]
     /// Log file path (default: era_test_node.log).
     pub log_file_path: Option<String>,
 
     // Cache Options
-    #[arg(long, help_heading = "cache")]
+    #[arg(long, help_heading = "Cache Options")]
     /// Cache type (none, memory, or disk). Default: "disk".
     pub cache: Option<CacheType>,
 
-    #[arg(long, help_heading = "cache")]
+    #[arg(long, help_heading = "Cache Options")]
     /// Reset the local disk cache.
     pub reset_cache: Option<bool>,
 
-    #[arg(long, help_heading = "cache")]
+    #[arg(long, help_heading = "Cache Options")]
     /// Cache directory location for disk cache (default: .cache).
     pub cache_dir: Option<String>,
 }
