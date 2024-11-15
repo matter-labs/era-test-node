@@ -10,7 +10,7 @@ use zksync_types::api::{Block, BridgeAddresses, Transaction, TransactionVariant}
 use zksync_types::Transaction as RawTransaction;
 use zksync_types::H256;
 
-use crate::config::cache::CacheConfig;
+use crate::config::CacheConfig;
 
 /// Caches full blocks by their hashes
 const CACHE_TYPE_BLOCKS_FULL: &str = "blocks_full";

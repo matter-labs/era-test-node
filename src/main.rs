@@ -4,11 +4,8 @@ use bytecode_override::override_bytecodes;
 use clap::Parser;
 use colored::Colorize;
 use config::cli::{Cli, Command};
-use config::gas::{
-    Estimation, GasConfig, DEFAULT_ESTIMATE_GAS_PRICE_SCALE_FACTOR,
-    DEFAULT_ESTIMATE_GAS_SCALE_FACTOR,
-};
 use config::TestNodeConfig;
+use config::{DEFAULT_ESTIMATE_GAS_PRICE_SCALE_FACTOR, DEFAULT_ESTIMATE_GAS_SCALE_FACTOR};
 use fork::{ForkDetails, ForkSource};
 use http_fork_source::HttpForkSource;
 use logging_middleware::LoggingMiddleware;
@@ -113,8 +110,8 @@ async fn main() -> anyhow::Result<()> {
     let mut config = TestNodeConfig::try_load(&opt.config).unwrap_or_default();
     config.override_with_opts(&opt);
 
-    let log_level_filter = LevelFilter::from(config.log.level);
-    let log_file = File::create(config.log.file_path)?;
+    let log_level_filter = LevelFilter::from(config.log_level);
+    let log_file = File::create(&config.log_file_path)?;
 
     // Initialize the tracing subscriber
     let observability =
@@ -140,29 +137,30 @@ async fn main() -> anyhow::Result<()> {
                     anyhow!(e)
                 })?;
 
-                let gas_config = match fee {
-                    FeeParams::V2(fee_v2) => GasConfig {
-                        l1_gas_price: Some(fee_v2.l1_gas_price()),
-                        l2_gas_price: Some(fee_v2.config().minimal_l2_gas_price),
-                        l1_pubdata_price: Some(fee_v2.l1_pubdata_price()),
-                        estimation: Some(Estimation {
-                            price_scale_factor: Some(DEFAULT_ESTIMATE_GAS_PRICE_SCALE_FACTOR),
-                            limit_scale_factor: Some(DEFAULT_ESTIMATE_GAS_SCALE_FACTOR),
-                        }),
-                    },
-                    FeeParams::V1(_) => {
-                        return Err(anyhow!("Unsupported FeeParams::V1 in this context"))
+                match fee {
+                    FeeParams::V2(fee_v2) => {
+                        config = config
+                            .with_l1_gas_price(Some(fee_v2.l1_gas_price()))
+                            .with_l2_gas_price(Some(fee_v2.config().minimal_l2_gas_price))
+                            .with_price_scale(Some(DEFAULT_ESTIMATE_GAS_PRICE_SCALE_FACTOR))
+                            .with_gas_limit_scale(Some(DEFAULT_ESTIMATE_GAS_SCALE_FACTOR))
+                            .with_l1_pubdata_price(fee_v2.l1_pubdata_price());
                     }
-                };
-
-                config.gas = Some(gas_config);
+                    FeeParams::V1(_) => {
+                        return Err(anyhow!("Unsupported FeeParams::V1 in this context"));
+                    }
+                }
 
                 None
             }
         }
         Command::Fork(fork) => {
-            match ForkDetails::from_network(&fork.network, fork.fork_block_number, config.cache)
-                .await
+            match ForkDetails::from_network(
+                &fork.network,
+                fork.fork_block_number,
+                &config.cache_config,
+            )
+            .await
             {
                 Ok(fd) => Some(fd),
                 Err(error) => {
@@ -172,7 +170,12 @@ async fn main() -> anyhow::Result<()> {
             }
         }
         Command::ReplayTx(replay_tx) => {
-            match ForkDetails::from_network_tx(&replay_tx.network, replay_tx.tx, config.cache).await
+            match ForkDetails::from_network_tx(
+                &replay_tx.network,
+                replay_tx.tx,
+                &config.cache_config,
+            )
+            .await
             {
                 Ok(fd) => Some(fd),
                 Err(error) => {
@@ -205,7 +208,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     if matches!(
-        config.node.system_contracts_options,
+        config.system_contracts_options,
         system_contracts::Options::Local
     ) {
         if let Some(path) = env::var_os("ZKSYNC_HOME") {
@@ -214,7 +217,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let node: InMemoryNode<HttpForkSource> =
-        InMemoryNode::new(fork_details, Some(observability), config.node, config.gas);
+        InMemoryNode::new(fork_details, Some(observability), &config);
 
     if let Some(bytecodes_dir) = opt.override_bytecodes_dir {
         override_bytecodes(&node, bytecodes_dir).unwrap();
@@ -248,14 +251,14 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let threads = build_json_http(
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), config.node.port),
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), config.port),
         log_level_filter,
         node,
     )
     .await;
 
     tracing::info!("========================================");
-    tracing::info!("  Node is ready at 127.0.0.1:{}", config.node.port);
+    tracing::info!("  Node is ready at 127.0.0.1:{}", config.port);
     tracing::info!("========================================");
 
     future::select_all(vec![threads]).await.0.unwrap();

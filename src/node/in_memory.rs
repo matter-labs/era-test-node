@@ -49,9 +49,7 @@ use zksync_web3_decl::error::Web3Error;
 use crate::{
     bootloader_debug::{BootloaderDebug, BootloaderDebugTracer},
     config::{
-        cache::CacheConfig,
-        gas::{self, GasConfig},
-        node::{InMemoryNodeConfig, ShowCalls, ShowGasDetails, ShowStorageLogs, ShowVMDetails},
+        CacheConfig, ShowCalls, ShowGasDetails, ShowStorageLogs, ShowVMDetails, TestNodeConfig,
     },
     console_log::ConsoleLogHandler,
     constants::{LEGACY_RICH_WALLETS, RICH_WALLETS},
@@ -72,8 +70,6 @@ use crate::{
 pub const MAX_TX_SIZE: usize = 1_000_000;
 /// Timestamp of the first block (if not running in fork mode).
 pub const NON_FORK_FIRST_BLOCK_TIMESTAMP: u64 = 1_000;
-/// Network ID we use for the test node.
-pub const TEST_NODE_NETWORK_ID: u32 = 260;
 /// Acceptable gas overestimation limit.
 pub const ESTIMATE_GAS_ACCEPTABLE_OVERESTIMATION: u64 = 1_000;
 /// The maximum number of previous blocks to store the state for.
@@ -173,7 +169,7 @@ pub struct InMemoryNodeInner<S> {
     // Underlying storage
     pub fork_storage: ForkStorage<S>,
     // Configuration.
-    pub config: InMemoryNodeConfig,
+    pub config: TestNodeConfig,
     pub console_log_handler: ConsoleLogHandler,
     pub system_contracts: SystemContracts,
     pub impersonated_accounts: HashSet<Address>,
@@ -198,28 +194,25 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
     pub fn new(
         fork: Option<ForkDetails>,
         observability: Option<Observability>,
-        config: InMemoryNodeConfig,
-        gas_overrides: Option<GasConfig>,
+        config: &TestNodeConfig,
     ) -> Self {
         if let Some(f) = &fork {
             let mut block_hashes = HashMap::<u64, H256>::new();
             block_hashes.insert(f.l2_block.number.as_u64(), f.l2_block.hash);
             let mut blocks = HashMap::<H256, Block<TransactionVariant>>::new();
             blocks.insert(f.l2_block.hash, f.l2_block.clone());
-
+            // TODO: review usage of .overrides for gas params?
             let fee_input_provider = if let Some(params) = f.fee_params {
                 TestNodeFeeInputProvider::from_fee_params_and_estimate_scale_factors(
                     params,
                     f.estimate_gas_price_scale_factor,
                     f.estimate_gas_scale_factor,
                 )
-                .with_overrides(gas_overrides)
             } else {
                 TestNodeFeeInputProvider::from_estimate_scale_factors(
                     f.estimate_gas_price_scale_factor,
                     f.estimate_gas_scale_factor,
                 )
-                .with_overrides(gas_overrides)
             };
 
             InMemoryNodeInner {
@@ -234,15 +227,15 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
                 filters: Default::default(),
                 fork_storage: ForkStorage::new(
                     fork,
-                    &config.system_contracts_options,
+                    &config.system_contracts_options.clone(),
                     config.use_evm_emulator,
                     config.chain_id,
                 ),
-                config,
+                config: config.clone(),
                 console_log_handler: ConsoleLogHandler::default(),
                 system_contracts: SystemContracts::from_options(
                     &config.system_contracts_options,
-                    config.use_evm_emulator,
+                    config.clone().use_evm_emulator,
                 ),
                 impersonated_accounts: Default::default(),
                 rich_accounts: HashSet::new(),
@@ -258,9 +251,8 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
                 block_hash,
                 create_empty_block(0, NON_FORK_FIRST_BLOCK_TIMESTAMP, 0, None),
             );
-
-            let fee_input_provider =
-                TestNodeFeeInputProvider::default().with_overrides(gas_overrides);
+            // TODO: review usage of .overrides for gas params?
+            let fee_input_provider = TestNodeFeeInputProvider::default();
             InMemoryNodeInner {
                 current_timestamp: NON_FORK_FIRST_BLOCK_TIMESTAMP,
                 current_batch: 0,
@@ -277,7 +269,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
                     config.use_evm_emulator,
                     config.chain_id,
                 ),
-                config,
+                config: config.clone(),
                 console_log_handler: ConsoleLogHandler::default(),
                 system_contracts: SystemContracts::from_options(
                     &config.system_contracts_options,
@@ -863,7 +855,7 @@ fn contract_address_from_tx_result(execution_result: &VmExecutionResultAndLogs) 
 
 impl<S: ForkSource + std::fmt::Debug + Clone> Default for InMemoryNode<S> {
     fn default() -> Self {
-        InMemoryNode::new(None, None, InMemoryNodeConfig::default(), None)
+        InMemoryNode::new(None, None, &TestNodeConfig::default())
     }
 }
 
@@ -871,11 +863,10 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
     pub fn new(
         fork: Option<ForkDetails>,
         observability: Option<Observability>,
-        config: InMemoryNodeConfig,
-        gas_overrides: Option<GasConfig>,
+        config: &TestNodeConfig,
     ) -> Self {
         let system_contracts_options = config.system_contracts_options;
-        let inner = InMemoryNodeInner::new(fork, observability, config, gas_overrides);
+        let inner = InMemoryNodeInner::new(fork, observability, config);
         InMemoryNode {
             inner: Arc::new(RwLock::new(inner)),
             snapshots: Default::default(),
@@ -903,31 +894,13 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         inner.fork_storage.get_fork_url()
     }
 
-    fn get_config(&self) -> Result<InMemoryNodeConfig, String> {
+    fn get_config(&self) -> Result<TestNodeConfig, String> {
         let inner = self
             .inner
             .read()
             .map_err(|e| format!("Failed to acquire read lock: {}", e))?;
 
-        Ok(inner.config)
-    }
-
-    fn get_gas_values(&self) -> Result<GasConfig, String> {
-        let inner = self
-            .inner
-            .read()
-            .map_err(|e| format!("Failed to acquire read lock: {}", e))?;
-
-        let fee_input_provider = &inner.fee_input_provider;
-        Ok(GasConfig {
-            l1_gas_price: Some(fee_input_provider.l1_gas_price),
-            l2_gas_price: Some(fee_input_provider.l2_gas_price),
-            l1_pubdata_price: Some(fee_input_provider.l1_pubdata_price),
-            estimation: Some(gas::Estimation {
-                price_scale_factor: Some(fee_input_provider.estimate_gas_price_scale_factor),
-                limit_scale_factor: Some(fee_input_provider.estimate_gas_scale_factor),
-            }),
-        })
+        Ok(inner.config.clone())
     }
 
     pub fn reset(&self, fork: Option<ForkDetails>) -> Result<(), String> {
@@ -939,8 +912,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
             .clone();
 
         let config = self.get_config()?;
-        let gas_values = self.get_gas_values()?;
-        let inner = InMemoryNodeInner::new(fork, observability, config, Some(gas_values));
+        let inner = InMemoryNodeInner::new(fork, observability, &config);
 
         let mut writer = self
             .snapshots
@@ -1812,17 +1784,14 @@ pub fn load_last_l1_batch<S: ReadStorage>(storage: StoragePtr<S>) -> Option<(u64
 #[cfg(test)]
 mod tests {
     use ethabi::{Token, Uint};
-    use gas::DEFAULT_FAIR_PUBDATA_PRICE;
     use zksync_types::{utils::deployed_address_create, K256PrivateKey, Nonce};
 
     use super::*;
     use crate::{
         config::{
-            gas::{
-                DEFAULT_ESTIMATE_GAS_PRICE_SCALE_FACTOR, DEFAULT_ESTIMATE_GAS_SCALE_FACTOR,
-                DEFAULT_L2_GAS_PRICE,
-            },
-            node::InMemoryNodeConfig,
+            TestNodeConfig, DEFAULT_ESTIMATE_GAS_PRICE_SCALE_FACTOR,
+            DEFAULT_ESTIMATE_GAS_SCALE_FACTOR, DEFAULT_FAIR_PUBDATA_PRICE, DEFAULT_L2_GAS_PRICE,
+            TEST_NODE_NETWORK_ID,
         },
         http_fork_source::HttpForkSource,
         node::InMemoryNode,
@@ -1949,8 +1918,7 @@ mod tests {
                 cache_config: CacheConfig::default(),
             }),
             None,
-            Default::default(),
-            Default::default(),
+            &Default::default(),
         );
 
         let tx = testing::TransactionBuilder::new().build();
@@ -1966,11 +1934,10 @@ mod tests {
         let node = InMemoryNode::<HttpForkSource>::new(
             None,
             None,
-            InMemoryNodeConfig {
+            &TestNodeConfig {
                 system_contracts_options: Options::BuiltInWithoutSecurity,
                 ..Default::default()
             },
-            Default::default(),
         );
 
         let private_key = K256PrivateKey::from_bytes(H256::repeat_byte(0xef)).unwrap();
