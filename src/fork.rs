@@ -433,6 +433,8 @@ const SUPPORTED_VERSIONS: &[ProtocolVersionId] = &[
     ProtocolVersionId::Version23,
     ProtocolVersionId::Version24,
     ProtocolVersionId::Version25,
+    ProtocolVersionId::Version26,
+    ProtocolVersionId::Version27,
 ];
 
 pub fn supported_protocol_versions(version: ProtocolVersionId) -> bool {
