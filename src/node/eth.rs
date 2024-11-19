@@ -2942,7 +2942,7 @@ mod tests {
         inner.current_batch = 1;
         inner.current_miniblock = 1;
         inner.current_miniblock_hash = H256::repeat_byte(0x1);
-        inner.current_timestamp = 1;
+        inner.time.set_last_timestamp_unchecked(1);
         inner
             .filters
             .add_block_filter()
@@ -2959,7 +2959,7 @@ mod tests {
 
         let storage = inner.fork_storage.inner.read().unwrap();
         let expected_snapshot = Snapshot {
-            current_timestamp: inner.current_timestamp,
+            current_timestamp: inner.time.last_timestamp(),
             current_batch: inner.current_batch,
             current_miniblock: inner.current_miniblock,
             current_miniblock_hash: inner.current_miniblock_hash,
@@ -3048,7 +3048,7 @@ mod tests {
         inner.current_batch = 1;
         inner.current_miniblock = 1;
         inner.current_miniblock_hash = H256::repeat_byte(0x1);
-        inner.current_timestamp = 1;
+        inner.time.set_last_timestamp_unchecked(1);
         inner
             .filters
             .add_block_filter()
@@ -3066,7 +3066,7 @@ mod tests {
         let expected_snapshot = {
             let storage = inner.fork_storage.inner.read().unwrap();
             Snapshot {
-                current_timestamp: inner.current_timestamp,
+                current_timestamp: inner.time.last_timestamp(),
                 current_batch: inner.current_batch,
                 current_miniblock: inner.current_miniblock,
                 current_miniblock_hash: inner.current_miniblock_hash,
@@ -3101,7 +3101,7 @@ mod tests {
         inner.current_batch = 2;
         inner.current_miniblock = 2;
         inner.current_miniblock_hash = H256::repeat_byte(0x2);
-        inner.current_timestamp = 2;
+        inner.time.set_last_timestamp_unchecked(2);
         inner
             .filters
             .add_pending_transaction_filter()
@@ -3122,7 +3122,10 @@ mod tests {
             .expect("failed restoring snapshot");
 
         let storage = inner.fork_storage.inner.read().unwrap();
-        assert_eq!(expected_snapshot.current_timestamp, inner.current_timestamp);
+        assert_eq!(
+            expected_snapshot.current_timestamp,
+            inner.time.last_timestamp()
+        );
         assert_eq!(expected_snapshot.current_batch, inner.current_batch);
         assert_eq!(expected_snapshot.current_miniblock, inner.current_miniblock);
         assert_eq!(
