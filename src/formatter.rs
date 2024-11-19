@@ -1,5 +1,5 @@
 //! Helper methods to display transaction data in more human readable way.
-use crate::{config::node::ShowCalls, resolver};
+use crate::{config::show_details::ShowCalls, resolver};
 
 use colored::Colorize;
 
@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::str;
 
 use crate::fork::block_on;
-use zksync_basic_types::H160;
+use zksync_types::H160;
 
 use zksync_multivm::interface::{Call, VmEvent, VmExecutionResultAndLogs};
 use zksync_types::StorageLogWithPreviousValue;

@@ -1,13 +1,61 @@
 //! In-memory node, that supports forking other networks.
+use std::{
+    collections::{HashMap, HashSet},
+    convert::TryInto,
+    str::FromStr,
+    sync::{Arc, RwLock},
+};
+
+use anyhow::Context as _;
+use colored::Colorize;
+use indexmap::IndexMap;
+use once_cell::sync::OnceCell;
+use zksync_contracts::BaseSystemContracts;
+use zksync_multivm::{
+    interface::{
+        storage::{ReadStorage, StoragePtr, WriteStorage},
+        Call, ExecutionResult, InspectExecutionMode, L1BatchEnv, L2Block, L2BlockEnv, SystemEnv,
+        TxExecutionMode, VmExecutionResultAndLogs, VmFactory, VmInterface, VmInterfaceExt,
+    },
+    tracers::CallTracer,
+    utils::{
+        adjust_pubdata_price_for_tx, derive_base_fee_and_gas_per_pubdata, derive_overhead,
+        get_batch_base_fee, get_max_batch_gas_limit, get_max_gas_per_pubdata_byte,
+    },
+    vm_latest::{
+        constants::{BATCH_COMPUTATIONAL_GAS_LIMIT, BATCH_GAS_LIMIT, MAX_VM_PUBDATA_PER_BATCH},
+        utils::l2_blocks::load_last_l2_block,
+        HistoryDisabled, ToTracerPointer, Vm,
+    },
+    VmVersion,
+};
+use zksync_types::{
+    api::{Block, DebugCall, Log, TransactionReceipt, TransactionVariant},
+    block::{build_bloom, unpack_block_info, L2BlockHasher},
+    fee::Fee,
+    fee_model::{BatchFeeInput, PubdataIndependentBatchFeeModelInput},
+    get_code_key, get_nonce_key,
+    l2::{L2Tx, TransactionType},
+    utils::{decompose_full_nonce, nonces_to_full_nonce, storage_key_for_eth_balance},
+    web3::{keccak256, Bytes, Index},
+    AccountTreeId, Address, BloomInput, L1BatchNumber, L2BlockNumber, PackedEthSignature,
+    StorageKey, StorageValue, Transaction, ACCOUNT_CODE_STORAGE_ADDRESS, EMPTY_UNCLES_HASH, H160,
+    H256, H64, MAX_L2_TX_GAS_LIMIT, SYSTEM_CONTEXT_ADDRESS, SYSTEM_CONTEXT_BLOCK_INFO_POSITION,
+    U256, U64,
+};
+use zksync_utils::{bytecode::hash_bytecode, h256_to_account_address, h256_to_u256, u256_to_h256};
+use zksync_web3_decl::error::Web3Error;
+
+use crate::node::time::TimestampManager;
 use crate::{
     bootloader_debug::{BootloaderDebug, BootloaderDebugTracer},
     config::{
         cache::CacheConfig,
-        gas::{self, GasConfig},
-        node::{InMemoryNodeConfig, ShowCalls, ShowGasDetails, ShowStorageLogs, ShowVMDetails},
+        constants::{LEGACY_RICH_WALLETS, RICH_WALLETS},
+        show_details::{ShowCalls, ShowGasDetails, ShowStorageLogs, ShowVMDetails},
+        TestNodeConfig,
     },
     console_log::ConsoleLogHandler,
-    constants::{LEGACY_RICH_WALLETS, RICH_WALLETS},
     deps::{storage_view::StorageView, InMemoryStorage},
     filters::EthFilters,
     fork::{ForkDetails, ForkSource, ForkStorage},
@@ -20,64 +68,11 @@ use crate::{
     system_contracts::{self, SystemContracts},
     utils::{bytecode_to_factory_dep, create_debug_output, into_jsrpc_error, to_human_size},
 };
-use anyhow::Context as _;
-use colored::Colorize;
-use indexmap::IndexMap;
-use once_cell::sync::OnceCell;
-use std::{
-    collections::{HashMap, HashSet},
-    str::FromStr,
-    sync::{Arc, RwLock},
-};
-
-use std::convert::TryInto;
-use zksync_basic_types::{
-    web3::keccak256, web3::Bytes, AccountTreeId, Address, L1BatchNumber, L2BlockNumber, H160, H256,
-    U256, U64,
-};
-use zksync_contracts::BaseSystemContracts;
-use zksync_multivm::interface::storage::{ReadStorage, StoragePtr, WriteStorage};
-use zksync_multivm::{
-    interface::{
-        Call, ExecutionResult, L1BatchEnv, L2Block, L2BlockEnv, SystemEnv, TxExecutionMode,
-        VmExecutionMode, VmExecutionResultAndLogs, VmFactory, VmInterface, VmInterfaceExt,
-    },
-    vm_latest::constants::BATCH_COMPUTATIONAL_GAS_LIMIT,
-    VmVersion,
-};
-use zksync_multivm::{
-    tracers::CallTracer,
-    utils::{
-        adjust_pubdata_price_for_tx, derive_base_fee_and_gas_per_pubdata, derive_overhead,
-        get_max_gas_per_pubdata_byte,
-    },
-    vm_latest::HistoryDisabled,
-    vm_latest::{
-        constants::{BATCH_GAS_LIMIT, MAX_VM_PUBDATA_PER_BATCH},
-        utils::l2_blocks::load_last_l2_block,
-        ToTracerPointer, Vm,
-    },
-};
-use zksync_types::{
-    api::{Block, DebugCall, Log, TransactionReceipt, TransactionVariant},
-    block::{unpack_block_info, L2BlockHasher},
-    fee::Fee,
-    fee_model::{BatchFeeInput, PubdataIndependentBatchFeeModelInput},
-    get_code_key, get_nonce_key,
-    l2::{L2Tx, TransactionType},
-    utils::{decompose_full_nonce, nonces_to_full_nonce, storage_key_for_eth_balance},
-    PackedEthSignature, StorageKey, StorageValue, Transaction, ACCOUNT_CODE_STORAGE_ADDRESS,
-    MAX_L2_TX_GAS_LIMIT, SYSTEM_CONTEXT_ADDRESS, SYSTEM_CONTEXT_BLOCK_INFO_POSITION,
-};
-use zksync_utils::{bytecode::hash_bytecode, h256_to_account_address, h256_to_u256, u256_to_h256};
-use zksync_web3_decl::error::Web3Error;
 
 /// Max possible size of an ABI encoded tx (in bytes).
 pub const MAX_TX_SIZE: usize = 1_000_000;
 /// Timestamp of the first block (if not running in fork mode).
 pub const NON_FORK_FIRST_BLOCK_TIMESTAMP: u64 = 1_000;
-/// Network ID we use for the test node.
-pub const TEST_NODE_NETWORK_ID: u32 = 260;
 /// Acceptable gas overestimation limit.
 pub const ESTIMATE_GAS_ACCEPTABLE_OVERESTIMATION: u64 = 1_000;
 /// The maximum number of previous blocks to store the state for.
@@ -153,9 +148,8 @@ impl TransactionResult {
 /// S - is the Source of the Fork.
 #[derive(Clone)]
 pub struct InMemoryNodeInner<S> {
-    /// The latest timestamp that was already generated.
-    /// Next block will be current_timestamp + 1
-    pub current_timestamp: u64,
+    /// Supplies timestamps that are unique across the system.
+    pub time: TimestampManager,
     /// The latest batch number that was already generated.
     /// Next block will be current_batch + 1
     pub current_batch: u32,
@@ -177,7 +171,7 @@ pub struct InMemoryNodeInner<S> {
     // Underlying storage
     pub fork_storage: ForkStorage<S>,
     // Configuration.
-    pub config: InMemoryNodeConfig,
+    pub config: TestNodeConfig,
     pub console_log_handler: ConsoleLogHandler,
     pub system_contracts: SystemContracts,
     pub impersonated_accounts: HashSet<Address>,
@@ -202,14 +196,24 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
     pub fn new(
         fork: Option<ForkDetails>,
         observability: Option<Observability>,
-        config: InMemoryNodeConfig,
-        gas_overrides: Option<GasConfig>,
+        config: &TestNodeConfig,
     ) -> Self {
+        let mut updated_config = config.clone();
+
         if let Some(f) = &fork {
             let mut block_hashes = HashMap::<u64, H256>::new();
             block_hashes.insert(f.l2_block.number.as_u64(), f.l2_block.hash);
             let mut blocks = HashMap::<H256, Block<TransactionVariant>>::new();
             blocks.insert(f.l2_block.hash, f.l2_block.clone());
+
+            // Update the config fields from fork details
+            updated_config = updated_config
+                .with_l1_gas_price(Some(f.l1_gas_price))
+                .with_l2_gas_price(Some(f.l2_fair_gas_price))
+                .with_l1_pubdata_price(Some(f.fair_pubdata_price))
+                .with_price_scale(Some(f.estimate_gas_price_scale_factor))
+                .with_gas_limit_scale(Some(f.estimate_gas_scale_factor))
+                .with_chain_id(Some(f.chain_id.as_u64() as u32));
 
             let fee_input_provider = if let Some(params) = f.fee_params {
                 TestNodeFeeInputProvider::from_fee_params_and_estimate_scale_factors(
@@ -217,17 +221,15 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
                     f.estimate_gas_price_scale_factor,
                     f.estimate_gas_scale_factor,
                 )
-                .with_overrides(gas_overrides)
             } else {
                 TestNodeFeeInputProvider::from_estimate_scale_factors(
                     f.estimate_gas_price_scale_factor,
                     f.estimate_gas_scale_factor,
                 )
-                .with_overrides(gas_overrides)
             };
 
             InMemoryNodeInner {
-                current_timestamp: f.block_timestamp,
+                time: TimestampManager::new(f.block_timestamp),
                 current_batch: f.l1_block.0,
                 current_miniblock: f.l2_miniblock,
                 current_miniblock_hash: f.l2_miniblock_hash,
@@ -238,14 +240,15 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
                 filters: Default::default(),
                 fork_storage: ForkStorage::new(
                     fork,
-                    &config.system_contracts_options,
-                    config.use_evm_emulator,
+                    &updated_config.system_contracts_options,
+                    updated_config.use_evm_emulator,
+                    updated_config.chain_id,
                 ),
-                config,
+                config: updated_config.clone(),
                 console_log_handler: ConsoleLogHandler::default(),
                 system_contracts: SystemContracts::from_options(
-                    &config.system_contracts_options,
-                    config.use_evm_emulator,
+                    &updated_config.system_contracts_options,
+                    updated_config.use_evm_emulator,
                 ),
                 impersonated_accounts: Default::default(),
                 rich_accounts: HashSet::new(),
@@ -261,11 +264,10 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
                 block_hash,
                 create_empty_block(0, NON_FORK_FIRST_BLOCK_TIMESTAMP, 0, None),
             );
+            let fee_input_provider = TestNodeFeeInputProvider::default();
 
-            let fee_input_provider =
-                TestNodeFeeInputProvider::default().with_overrides(gas_overrides);
             InMemoryNodeInner {
-                current_timestamp: NON_FORK_FIRST_BLOCK_TIMESTAMP,
+                time: TimestampManager::new(NON_FORK_FIRST_BLOCK_TIMESTAMP),
                 current_batch: 0,
                 current_miniblock: 0,
                 current_miniblock_hash: block_hash,
@@ -278,8 +280,9 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
                     fork,
                     &config.system_contracts_options,
                     config.use_evm_emulator,
+                    updated_config.chain_id,
                 ),
-                config,
+                config: config.clone(),
                 console_log_handler: ConsoleLogHandler::default(),
                 system_contracts: SystemContracts::from_options(
                     &config.system_contracts_options,
@@ -306,15 +309,15 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
 
         let (last_l1_block_num, last_l1_block_ts) = load_last_l1_batch(storage.clone())
             .map(|(num, ts)| (num as u32, ts))
-            .unwrap_or_else(|| (self.current_batch, self.current_timestamp));
+            .unwrap_or_else(|| (self.current_batch, self.time.last_timestamp()));
         let last_l2_block = load_last_l2_block(&storage).unwrap_or_else(|| L2Block {
             number: self.current_miniblock as u32,
             hash: L2BlockHasher::legacy_hash(L2BlockNumber(self.current_miniblock as u32)),
-            timestamp: self.current_timestamp,
+            timestamp: self.time.last_timestamp(),
         });
         let latest_timestamp = std::cmp::max(
             std::cmp::max(last_l1_block_ts, last_l2_block.timestamp),
-            self.current_timestamp,
+            self.time.last_timestamp(),
         );
 
         let block_ctx = BlockContext::from_current(
@@ -722,7 +725,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
         let tx: Transaction = l2_tx.into();
         vm.push_transaction(tx);
 
-        vm.execute(VmExecutionMode::OneTx)
+        vm.execute(InspectExecutionMode::OneTx)
     }
 
     /// Sets the `impersonated_account` field of the node.
@@ -771,7 +774,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
             .map_err(|err| format!("failed acquiring read lock on storage: {:?}", err))?;
 
         Ok(Snapshot {
-            current_timestamp: self.current_timestamp,
+            current_timestamp: self.time.last_timestamp(),
             current_batch: self.current_batch,
             current_miniblock: self.current_miniblock,
             current_miniblock_hash: self.current_miniblock_hash,
@@ -797,7 +800,8 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
             .write()
             .map_err(|err| format!("failed acquiring write lock on storage: {:?}", err))?;
 
-        self.current_timestamp = snapshot.current_timestamp;
+        self.time
+            .set_last_timestamp_unchecked(snapshot.current_timestamp);
         self.current_batch = snapshot.current_batch;
         self.current_miniblock = snapshot.current_miniblock;
         self.current_miniblock_hash = snapshot.current_miniblock_hash;
@@ -852,6 +856,7 @@ pub struct InMemoryNode<S: Clone> {
     /// Configuration option that survives reset.
     #[allow(dead_code)]
     pub(crate) system_contracts_options: system_contracts::Options,
+    pub(crate) time: TimestampManager,
 }
 
 fn contract_address_from_tx_result(execution_result: &VmExecutionResultAndLogs) -> Option<H160> {
@@ -865,7 +870,7 @@ fn contract_address_from_tx_result(execution_result: &VmExecutionResultAndLogs) 
 
 impl<S: ForkSource + std::fmt::Debug + Clone> Default for InMemoryNode<S> {
     fn default() -> Self {
-        InMemoryNode::new(None, None, InMemoryNodeConfig::default(), None)
+        InMemoryNode::new(None, None, &TestNodeConfig::default())
     }
 }
 
@@ -873,15 +878,16 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
     pub fn new(
         fork: Option<ForkDetails>,
         observability: Option<Observability>,
-        config: InMemoryNodeConfig,
-        gas_overrides: Option<GasConfig>,
+        config: &TestNodeConfig,
     ) -> Self {
         let system_contracts_options = config.system_contracts_options;
-        let inner = InMemoryNodeInner::new(fork, observability, config, gas_overrides);
+        let inner = InMemoryNodeInner::new(fork, observability, config);
+        let time = inner.time.clone();
         InMemoryNode {
             inner: Arc::new(RwLock::new(inner)),
             snapshots: Default::default(),
             system_contracts_options,
+            time,
         }
     }
 
@@ -905,30 +911,13 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         inner.fork_storage.get_fork_url()
     }
 
-    fn get_config(&self) -> Result<InMemoryNodeConfig, String> {
+    fn get_config(&self) -> Result<TestNodeConfig, String> {
         let inner = self
             .inner
             .read()
             .map_err(|e| format!("Failed to acquire read lock: {}", e))?;
 
-        Ok(inner.config)
-    }
-
-    fn get_gas_values(&self) -> Result<GasConfig, String> {
-        let inner = self
-            .inner
-            .read()
-            .map_err(|e| format!("Failed to acquire read lock: {}", e))?;
-
-        let fee_input_provider = &inner.fee_input_provider;
-        Ok(GasConfig {
-            l1_gas_price: Some(fee_input_provider.l1_gas_price),
-            l2_gas_price: Some(fee_input_provider.l2_gas_price),
-            estimation: Some(gas::Estimation {
-                price_scale_factor: Some(fee_input_provider.estimate_gas_price_scale_factor),
-                limit_scale_factor: Some(fee_input_provider.estimate_gas_scale_factor),
-            }),
-        })
+        Ok(inner.config.clone())
     }
 
     pub fn reset(&self, fork: Option<ForkDetails>) -> Result<(), String> {
@@ -940,8 +929,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
             .clone();
 
         let config = self.get_config()?;
-        let gas_values = self.get_gas_values()?;
-        let inner = InMemoryNodeInner::new(fork, observability, config, Some(gas_values));
+        let inner = InMemoryNodeInner::new(fork, observability, &config);
 
         let mut writer = self
             .snapshots
@@ -1072,7 +1060,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
             CallErrorTracer::new().into_tracer_pointer(),
             CallTracer::new(call_tracer_result.clone()).into_tracer_pointer(),
         ];
-        let tx_result = vm.inspect(&mut tracers.into(), VmExecutionMode::OneTx);
+        let tx_result = vm.inspect(&mut tracers.into(), InspectExecutionMode::OneTx);
 
         let call_traces = Arc::try_unwrap(call_tracer_result)
             .unwrap()
@@ -1082,7 +1070,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         match &tx_result.result {
             ExecutionResult::Success { output } => {
                 tracing::info!("Call: {}", "SUCCESS".green());
-                let output_bytes = zksync_basic_types::web3::Bytes::from(output.clone());
+                let output_bytes = zksync_types::web3::Bytes::from(output.clone());
                 tracing::info!("Output: {}", serde_json::to_string(&output_bytes).unwrap());
             }
             ExecutionResult::Revert { output } => {
@@ -1461,8 +1449,11 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         let hash = compute_hash(block_ctx.miniblock, l2_tx.hash());
 
         let mut transaction = zksync_types::api::Transaction::from(l2_tx);
-        transaction.block_hash = Some(inner.current_miniblock_hash);
-        transaction.block_number = Some(U64::from(inner.current_miniblock));
+        transaction.block_hash = Some(hash);
+        transaction.block_number = Some(U64::from(block_ctx.miniblock));
+        transaction.transaction_index = Some(Index::zero());
+        transaction.l1_batch_number = Some(U64::from(batch_env.number.0));
+        transaction.l1_batch_tx_index = Some(Index::zero());
 
         let parent_block_hash = inner
             .block_hashes
@@ -1470,16 +1461,40 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
             .cloned()
             .unwrap_or_default();
 
+        let iter = tx_result.logs.events.iter().flat_map(|event| {
+            event
+                .indexed_topics
+                .iter()
+                .map(|topic| BloomInput::Raw(topic.as_bytes()))
+                .chain([BloomInput::Raw(event.address.as_bytes())])
+        });
+        let logs_bloom = build_bloom(iter);
+
         let block = Block {
             hash,
             parent_hash: parent_block_hash,
+            uncles_hash: EMPTY_UNCLES_HASH, // Static for non-PoW chains, see EIP-3675
             number: U64::from(block_ctx.miniblock),
-            timestamp: U256::from(batch_env.timestamp),
             l1_batch_number: Some(U64::from(batch_env.number.0)),
+            base_fee_per_gas: U256::from(get_batch_base_fee(&batch_env, VmVersion::latest())),
+            timestamp: U256::from(batch_env.timestamp),
+            l1_batch_timestamp: Some(U256::from(batch_env.timestamp)),
             transactions: vec![TransactionVariant::Full(transaction)],
             gas_used: U256::from(tx_result.statistics.gas_used),
-            gas_limit: U256::from(BATCH_GAS_LIMIT),
-            ..Default::default()
+            gas_limit: U256::from(get_max_batch_gas_limit(VmVersion::latest())),
+            logs_bloom,
+            author: Address::default(), // Matches core's behavior, irrelevant for ZKsync
+            state_root: H256::default(), // Intentionally empty as blocks in ZKsync don't have state - batches do
+            transactions_root: H256::default(), // Intentionally empty as blocks in ZKsync don't have state - batches do
+            receipts_root: H256::default(), // Intentionally empty as blocks in ZKsync don't have state - batches do
+            extra_data: Bytes::default(),   // Matches core's behavior, not used in ZKsync
+            difficulty: U256::default(), // Empty for non-PoW chains, see EIP-3675, TODO: should be 2500000000000000 to match DIFFICULTY opcode
+            total_difficulty: U256::default(), // Empty for non-PoW chains, see EIP-3675
+            seal_fields: vec![],         // Matches core's behavior, TODO: remove
+            uncles: vec![],              // Empty for non-PoW chains, see EIP-3675
+            size: U256::default(), // Matches core's behavior, TODO: perhaps it should be computed
+            mix_hash: H256::default(), // Empty for non-PoW chains, see EIP-3675
+            nonce: H64::default(), // Empty for non-PoW chains, see EIP-3675
         };
 
         let mut bytecodes = HashMap::new();
@@ -1491,7 +1506,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
             bytecodes.insert(hash, bytecode);
         }
         if execute_bootloader {
-            vm.execute(VmExecutionMode::Bootloader);
+            vm.execute(InspectExecutionMode::Bootloader);
         }
 
         let modified_keys = storage.borrow().modified_storage_keys().clone();
@@ -1591,7 +1606,6 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
             l1_batch_number: block.l1_batch_number,
             from: l2_tx.initiator_account(),
             to: l2_tx.recipient_account(),
-            root: H256::zero(),
             cumulative_gas_used: Default::default(),
             gas_used: Some(l2_tx.common_data.fee.gas_limit - result.refunds.gas_refunded),
             contract_address: contract_address_from_tx_result(&result),
@@ -1669,7 +1683,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
             }
 
             inner.current_miniblock = inner.current_miniblock.saturating_add(1);
-            inner.current_timestamp = inner.current_timestamp.saturating_add(1);
+            let expected_timestamp = inner.time.next_timestamp();
 
             let actual_l1_batch_number = block
                 .l1_batch_number
@@ -1690,10 +1704,10 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
                 );
             }
 
-            if block.timestamp.as_u64() != inner.current_timestamp {
+            if block.timestamp.as_u64() != expected_timestamp {
                 panic!(
                     "expected next block to have timestamp {}, got {} | {i}",
-                    inner.current_timestamp,
+                    expected_timestamp,
                     block.timestamp.as_u64()
                 );
             }
@@ -1787,18 +1801,16 @@ pub fn load_last_l1_batch<S: ReadStorage>(storage: StoragePtr<S>) -> Option<(u64
 #[cfg(test)]
 mod tests {
     use ethabi::{Token, Uint};
-    use gas::DEFAULT_FAIR_PUBDATA_PRICE;
-    use zksync_basic_types::Nonce;
-    use zksync_types::{utils::deployed_address_create, K256PrivateKey};
+    use zksync_types::{utils::deployed_address_create, K256PrivateKey, Nonce};
 
     use super::*;
     use crate::{
         config::{
-            gas::{
+            constants::{
                 DEFAULT_ESTIMATE_GAS_PRICE_SCALE_FACTOR, DEFAULT_ESTIMATE_GAS_SCALE_FACTOR,
-                DEFAULT_L2_GAS_PRICE,
+                DEFAULT_FAIR_PUBDATA_PRICE, DEFAULT_L2_GAS_PRICE, TEST_NODE_NETWORK_ID,
             },
-            node::InMemoryNodeConfig,
+            TestNodeConfig,
         },
         http_fork_source::HttpForkSource,
         node::InMemoryNode,
@@ -1909,6 +1921,7 @@ mod tests {
         let node: InMemoryNode<testing::ExternalStorage> = InMemoryNode::new(
             Some(ForkDetails {
                 fork_source: Box::new(mock_db),
+                chain_id: TEST_NODE_NETWORK_ID.into(),
                 l1_block: L1BatchNumber(1),
                 l2_block: Block::default(),
                 l2_miniblock: 2,
@@ -1924,8 +1937,7 @@ mod tests {
                 cache_config: CacheConfig::default(),
             }),
             None,
-            Default::default(),
-            Default::default(),
+            &Default::default(),
         );
 
         let tx = testing::TransactionBuilder::new().build();
@@ -1941,11 +1953,10 @@ mod tests {
         let node = InMemoryNode::<HttpForkSource>::new(
             None,
             None,
-            InMemoryNodeConfig {
+            &TestNodeConfig {
                 system_contracts_options: Options::BuiltInWithoutSecurity,
                 ..Default::default()
             },
-            Default::default(),
         );
 
         let private_key = K256PrivateKey::from_bytes(H256::repeat_byte(0xef)).unwrap();
@@ -1973,7 +1984,7 @@ mod tests {
                 gas_per_pubdata_limit: U256::from(50000),
             },
             U256::from(0),
-            zksync_basic_types::L2ChainId::from(260),
+            zksync_types::L2ChainId::from(260),
             &private_key,
             vec![],
             Default::default(),

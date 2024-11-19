@@ -1,6 +1,5 @@
 use once_cell::sync::Lazy;
 use serde_json::Value;
-use zksync_basic_types::{AccountTreeId, Address, H160};
 use zksync_types::{
     block::DeployedContract, ACCOUNT_CODE_STORAGE_ADDRESS, BOOTLOADER_ADDRESS,
     BOOTLOADER_UTILITIES_ADDRESS, CODE_ORACLE_ADDRESS, COMPRESSOR_ADDRESS,
@@ -11,6 +10,7 @@ use zksync_types::{
     P256VERIFY_PRECOMPILE_ADDRESS, PUBDATA_CHUNK_PUBLISHER_ADDRESS, SHA256_PRECOMPILE_ADDRESS,
     SYSTEM_CONTEXT_ADDRESS,
 };
+use zksync_types::{AccountTreeId, Address, H160};
 
 /// The `ecAdd` system contract address.
 pub const ECADD_PRECOMPILE_ADDRESS: Address = H160([
@@ -22,6 +22,11 @@ pub const ECADD_PRECOMPILE_ADDRESS: Address = H160([
 pub const ECMUL_PRECOMPILE_ADDRESS: Address = H160([
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x07,
+]);
+
+pub const TIMESTAMP_ASSERTER_ADDRESS: Address = H160([
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x80, 0x80, 0x12,
 ]);
 
 pub fn bytecode_from_slice(artifact_name: &str, contents: &[u8]) -> Vec<u8> {
@@ -102,6 +107,11 @@ pub static COMPILED_IN_SYSTEM_CONTRACTS: Lazy<Vec<DeployedContract>> = Lazy::new
             "Create2Factory",
             CREATE2_FACTORY_ADDRESS,
             include_bytes!("contracts/Create2Factory.json").to_vec(),
+        ),
+        (
+            "TimestampAsserter",
+            TIMESTAMP_ASSERTER_ADDRESS,
+            include_bytes!("contracts/TimestampAsserter.json").to_vec(),
         ),
     ]
     .map(|(pname, address, contents)| DeployedContract {

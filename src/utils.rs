@@ -1,29 +1,30 @@
-use std::convert::TryInto;
-use std::fmt;
-use std::pin::Pin;
+use std::{convert::TryInto, fmt, pin::Pin};
 
-use anyhow::anyhow;
+use anyhow::Context;
 use chrono::{DateTime, Utc};
 use futures::Future;
 use jsonrpc_core::{Error, ErrorCode};
-use zkevm_opcode_defs::utils::bytecode_to_code_hash;
-use zksync_basic_types::{H256, U256, U64};
-use zksync_multivm::interface::storage::WriteStorage;
-use zksync_multivm::interface::{
-    Call, CallType, ExecutionResult, VmExecutionResultAndLogs, VmFactory, VmInterfaceExt,
+use zksync_multivm::{
+    interface::{
+        storage::WriteStorage, Call, CallType, ExecutionResult, VmExecutionResultAndLogs,
+        VmFactory, VmInterfaceExt,
+    },
+    vm_latest::{HistoryDisabled, Vm},
 };
-use zksync_multivm::vm_latest::HistoryDisabled;
-use zksync_multivm::vm_latest::Vm;
-use zksync_types::api::{BlockNumber, DebugCall, DebugCallType};
-use zksync_types::l2::L2Tx;
-use zksync_types::web3::Bytes;
-use zksync_types::CONTRACT_DEPLOYER_ADDRESS;
+use zksync_types::{
+    api::{BlockNumber, DebugCall, DebugCallType},
+    l2::L2Tx,
+    web3::Bytes,
+    CONTRACT_DEPLOYER_ADDRESS, H256, U256, U64,
+};
 use zksync_utils::bytes_to_be_words;
 use zksync_web3_decl::error::Web3Error;
 
-use crate::deps::storage_view::StorageView;
-use crate::node::create_empty_block;
-use crate::{fork::ForkSource, node::InMemoryNodeInner};
+use crate::{
+    deps::storage_view::StorageView,
+    fork::ForkSource,
+    node::{create_empty_block, InMemoryNodeInner},
+};
 
 pub(crate) trait IntoBoxedFuture: Sized + Send + 'static {
     fn into_boxed_future(self) -> Pin<Box<dyn Future<Output = Self> + Send>> {
@@ -57,31 +58,9 @@ pub fn to_human_size(input: U256) -> String {
     tmp.iter().rev().collect()
 }
 
-pub fn bytes_to_chunks(bytes: &[u8]) -> Vec<[u8; 32]> {
-    bytes
-        .chunks(32)
-        .map(|el| {
-            let mut chunk = [0u8; 32];
-            chunk.copy_from_slice(el);
-            chunk
-        })
-        .collect()
-}
-
-pub fn hash_bytecode(code: &[u8]) -> Result<H256, anyhow::Error> {
-    if code.len() % 32 != 0 {
-        return Err(anyhow!("bytes must be divisible by 32"));
-    }
-
-    let chunked_code = bytes_to_chunks(code);
-    match bytecode_to_code_hash(&chunked_code) {
-        Ok(hash) => Ok(H256(hash)),
-        Err(_) => Err(anyhow!("invalid bytecode")),
-    }
-}
-
 pub fn bytecode_to_factory_dep(bytecode: Vec<u8>) -> Result<(U256, Vec<U256>), anyhow::Error> {
-    let bytecode_hash = hash_bytecode(&bytecode)?;
+    zksync_utils::bytecode::validate_bytecode(&bytecode).context("Invalid bytecode")?;
+    let bytecode_hash = zksync_utils::bytecode::hash_bytecode(&bytecode);
     let bytecode_hash = U256::from_big_endian(bytecode_hash.as_bytes());
 
     let bytecode_words = bytes_to_be_words(bytecode);
@@ -110,7 +89,7 @@ pub fn mine_empty_blocks<S: std::fmt::Debug + ForkSource>(
             let (batch_env, mut block_ctx) = node.create_l1_batch_env(storage.clone());
             // override the next block's timestamp to match up with interval for subsequent blocks
             if i != 0 {
-                block_ctx.timestamp = node.current_timestamp.saturating_add(interval_sec);
+                block_ctx.timestamp = node.time.increase_time(interval_sec);
             }
 
             // init vm
@@ -121,7 +100,7 @@ pub fn mine_empty_blocks<S: std::fmt::Debug + ForkSource>(
 
             let mut vm: Vm<_, HistoryDisabled> = Vm::new(batch_env, system_env, storage.clone());
 
-            vm.execute(zksync_multivm::interface::VmExecutionMode::Bootloader);
+            vm.execute(zksync_multivm::interface::InspectExecutionMode::Bootloader);
 
             // we should not have any bytecodes
             let modified_keys = storage.borrow().modified_storage_keys().clone();
@@ -145,7 +124,7 @@ pub fn mine_empty_blocks<S: std::fmt::Debug + ForkSource>(
         // leave node state ready for next interaction
         node.current_batch = block_ctx.batch;
         node.current_miniblock = block_ctx.miniblock;
-        node.current_timestamp = block_ctx.timestamp;
+        node.time.set_last_timestamp_unchecked(block_ctx.timestamp);
     }
 
     Ok(())
@@ -355,11 +334,10 @@ pub fn h256_to_u64(value: H256) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use zksync_basic_types::{H256, U256};
-
-    use crate::{http_fork_source::HttpForkSource, node::InMemoryNode, testing};
+    use zksync_types::{H256, U256};
 
     use super::*;
+    use crate::{http_fork_source::HttpForkSource, node::InMemoryNode, testing};
 
     #[test]
     fn test_utc_datetime_from_epoch_ms() {

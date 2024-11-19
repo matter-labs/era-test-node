@@ -1,7 +1,7 @@
 use zksync_web3_decl::error::Web3Error;
 
 use crate::{
-    config::node::{ShowCalls, ShowGasDetails, ShowStorageLogs, ShowVMDetails},
+    config::show_details::{ShowCalls, ShowGasDetails, ShowStorageLogs, ShowVMDetails},
     fork::ForkSource,
     namespaces::{ConfigurationApiNamespaceT, Result},
     node::InMemoryNode,
@@ -37,15 +37,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> Configurat
     }
 
     fn config_get_current_timestamp(&self) -> Result<u64> {
-        self.get_inner()
-            .read()
-            .map_err(|err| {
-                tracing::error!("failed acquiring lock: {:?}", err);
-                into_jsrpc_error(Web3Error::InternalError(anyhow::Error::msg(
-                    "Failed to acquire read lock for inner node state.",
-                )))
-            })
-            .map(|reader| reader.current_timestamp)
+        Ok(self.time.last_timestamp())
     }
 
     fn config_set_show_calls(&self, value: String) -> Result<String> {

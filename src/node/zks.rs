@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use bigdecimal::BigDecimal;
 use colored::Colorize;
 use futures::FutureExt;
-use zksync_basic_types::{AccountTreeId, Address, L1BatchNumber, L2BlockNumber, H256, U256};
 use zksync_types::{
     api::{
         BlockDetails, BlockDetailsBase, BlockStatus, BridgeAddresses, Proof, ProtocolVersion,
@@ -11,7 +10,8 @@ use zksync_types::{
     },
     fee::Fee,
     utils::storage_key_for_standard_token_balance,
-    ExecuteTransactionCommon, ProtocolVersionId, Transaction, H160, L2_BASE_TOKEN_ADDRESS,
+    AccountTreeId, Address, ExecuteTransactionCommon, L1BatchNumber, L2BlockNumber,
+    ProtocolVersionId, Transaction, H160, H256, L2_BASE_TOKEN_ADDRESS, U256,
 };
 use zksync_utils::h256_to_u256;
 use zksync_web3_decl::error::Web3Error;
@@ -139,11 +139,11 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> ZksNamespa
         not_implemented("zks_estimateGasL1ToL2")
     }
 
-    fn get_main_contract(&self) -> RpcResult<zksync_basic_types::Address> {
+    fn get_main_contract(&self) -> RpcResult<zksync_types::Address> {
         not_implemented("zks_getMainContract")
     }
 
-    fn get_testnet_paymaster(&self) -> RpcResult<Option<zksync_basic_types::Address>> {
+    fn get_testnet_paymaster(&self) -> RpcResult<Option<zksync_types::Address>> {
         not_implemented("zks_getTestnetPaymaster")
     }
 
@@ -178,6 +178,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> ZksNamespa
                     l2_erc20_default_bridge: Default::default(),
                     l1_weth_bridge: Default::default(),
                     l2_weth_bridge: Default::default(),
+                    l2_legacy_shared_bridge: Default::default(),
                 },
             };
 
@@ -185,7 +186,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> ZksNamespa
         })
     }
 
-    fn l1_chain_id(&self) -> RpcResult<zksync_basic_types::U64> {
+    fn l1_chain_id(&self) -> RpcResult<zksync_types::U64> {
         use crate::namespaces::EthNamespaceT;
         self.chain_id()
     }
@@ -232,7 +233,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> ZksNamespa
         })
     }
 
-    fn get_token_price(&self, token_address: zksync_basic_types::Address) -> RpcResult<BigDecimal> {
+    fn get_token_price(&self, token_address: zksync_types::Address) -> RpcResult<BigDecimal> {
         match format!("{:?}", token_address).to_lowercase().as_str() {
             "0x0000000000000000000000000000000000000000" => {
                 // ETH
@@ -281,9 +282,9 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> ZksNamespa
     /// A `BoxFuture` containing a `Result` with a (Token, Balance) map where account has non-zero value.
     fn get_all_account_balances(
         &self,
-        address: zksync_basic_types::Address,
+        address: zksync_types::Address,
     ) -> jsonrpc_core::BoxFuture<
-        jsonrpc_core::Result<std::collections::HashMap<zksync_basic_types::Address, U256>>,
+        jsonrpc_core::Result<std::collections::HashMap<zksync_types::Address, U256>>,
     > {
         let inner = self.get_inner().clone();
         Box::pin({
@@ -324,9 +325,9 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> ZksNamespa
 
     fn get_l2_to_l1_msg_proof(
         &self,
-        _block: zksync_basic_types::L2BlockNumber,
-        _sender: zksync_basic_types::Address,
-        _msg: zksync_basic_types::H256,
+        _block: zksync_types::L2BlockNumber,
+        _sender: zksync_types::Address,
+        _msg: zksync_types::H256,
         _l2_log_position: Option<usize>,
     ) -> RpcResult<Option<zksync_types::api::L2ToL1LogProof>> {
         not_implemented("zks_getL2ToL1MsgProof")
@@ -334,13 +335,13 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> ZksNamespa
 
     fn get_l2_to_l1_log_proof(
         &self,
-        _tx_hash: zksync_basic_types::H256,
+        _tx_hash: zksync_types::H256,
         _index: Option<usize>,
     ) -> RpcResult<Option<zksync_types::api::L2ToL1LogProof>> {
         not_implemented("zks_getL2ToL1LogProof")
     }
 
-    fn get_l1_batch_number(&self) -> RpcResult<zksync_basic_types::U64> {
+    fn get_l1_batch_number(&self) -> RpcResult<zksync_types::U64> {
         not_implemented("zks_L1BatchNumber")
     }
 
@@ -355,7 +356,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> ZksNamespa
     /// A `BoxFuture` containing a `Result` with an `Option<BlockDetails>` representing details of the block (if found).
     fn get_block_details(
         &self,
-        block_number: zksync_basic_types::L2BlockNumber,
+        block_number: zksync_types::L2BlockNumber,
     ) -> RpcResult<Option<zksync_types::api::BlockDetails>> {
         let inner = self.get_inner().clone();
         Box::pin(async move {
@@ -418,10 +419,9 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> ZksNamespa
 
     fn get_miniblock_range(
         &self,
-        _batch: zksync_basic_types::L1BatchNumber,
-    ) -> jsonrpc_core::BoxFuture<
-        jsonrpc_core::Result<Option<(zksync_basic_types::U64, zksync_basic_types::U64)>>,
-    > {
+        _batch: zksync_types::L1BatchNumber,
+    ) -> jsonrpc_core::BoxFuture<jsonrpc_core::Result<Option<(zksync_types::U64, zksync_types::U64)>>>
+    {
         not_implemented("zks_getL1BatchBlockRange")
     }
 
@@ -436,7 +436,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> ZksNamespa
     /// A `BoxFuture` containing a `Result` with an `Option<TransactionDetails>` representing details of the transaction (if found).
     fn get_transaction_details(
         &self,
-        hash: zksync_basic_types::H256,
+        hash: zksync_types::H256,
     ) -> RpcResult<Option<zksync_types::api::TransactionDetails>> {
         let inner = self.get_inner().clone();
         Box::pin(async move {
@@ -493,7 +493,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> ZksNamespa
     ///
     /// # Parameters
     ///
-    /// * `_batch`: The batch number of type `zksync_basic_types::L1BatchNumber` for which the details are to be fetched.
+    /// * `_batch`: The batch number of type `zksync_types::L1BatchNumber` for which the details are to be fetched.
     ///
     /// # Returns
     ///
@@ -501,7 +501,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> ZksNamespa
     /// Given the current implementation, this will always be `None`.
     fn get_l1_batch_details(
         &self,
-        _batch: zksync_basic_types::L1BatchNumber,
+        _batch: zksync_types::L1BatchNumber,
     ) -> RpcResult<Option<zksync_types::api::L1BatchDetails>> {
         Box::pin(async { Ok(None) })
     }
@@ -515,7 +515,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> ZksNamespa
     /// # Returns
     ///
     /// A boxed future resolving to a `jsonrpc_core::Result` containing an `Option` of bytes.
-    fn get_bytecode_by_hash(&self, hash: zksync_basic_types::H256) -> RpcResult<Option<Vec<u8>>> {
+    fn get_bytecode_by_hash(&self, hash: zksync_types::H256) -> RpcResult<Option<Vec<u8>>> {
         let inner = self.get_inner().clone();
         Box::pin(async move {
             let writer = inner.write().map_err(|_e| {
@@ -556,7 +556,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> ZksNamespa
         })
     }
 
-    fn get_l1_gas_price(&self) -> RpcResult<zksync_basic_types::U64> {
+    fn get_l1_gas_price(&self) -> RpcResult<zksync_types::U64> {
         not_implemented("zks_getL1GasPrice")
     }
 
@@ -569,7 +569,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> ZksNamespa
     /// # Returns
     ///
     /// Hard-coded address of 0x1 to replicate mainnet/testnet
-    fn get_base_token_l1_address(&self) -> RpcResult<zksync_basic_types::Address> {
+    fn get_base_token_l1_address(&self) -> RpcResult<zksync_types::Address> {
         Ok(H160::from_low_u64_be(1)).into_boxed_future()
     }
 }
@@ -578,18 +578,22 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> ZksNamespa
 mod tests {
     use std::str::FromStr;
 
-    use crate::config::cache::CacheConfig;
-    use crate::fork::ForkDetails;
-    use crate::node::TEST_NODE_NETWORK_ID;
-    use crate::testing;
-    use crate::testing::{ForkBlockConfig, MockServer};
-    use crate::{http_fork_source::HttpForkSource, node::InMemoryNode};
+    use zksync_types::{
+        api::{self, Block, TransactionReceipt, TransactionVariant},
+        transaction_request::CallRequest,
+        Address, H160, H256,
+    };
+    use zksync_utils::u256_to_h256;
 
     use super::*;
-    use zksync_basic_types::{Address, H160, H256};
-    use zksync_types::api::{self, Block, TransactionReceipt, TransactionVariant};
-    use zksync_types::transaction_request::CallRequest;
-    use zksync_utils::u256_to_h256;
+    use crate::{
+        config::{cache::CacheConfig, constants::TEST_NODE_NETWORK_ID},
+        fork::ForkDetails,
+        http_fork_source::HttpForkSource,
+        node::InMemoryNode,
+        testing,
+        testing::{ForkBlockConfig, MockServer},
+    };
 
     #[tokio::test]
     async fn test_estimate_fee() {
@@ -621,10 +625,10 @@ mod tests {
 
         let result = node.estimate_fee(mock_request).await.unwrap();
 
-        assert_eq!(result.gas_limit, U256::from(4490368));
-        assert_eq!(result.max_fee_per_gas, U256::from(37500000));
+        assert_eq!(result.gas_limit, U256::from(279779));
+        assert_eq!(result.max_fee_per_gas, U256::from(45250000));
         assert_eq!(result.max_priority_fee_per_gas, U256::from(0));
-        assert_eq!(result.gas_per_pubdata_limit, U256::from(50000));
+        assert_eq!(result.gas_per_pubdata_limit, U256::from(1658));
     }
 
     #[tokio::test]
@@ -740,13 +744,12 @@ mod tests {
 
         let node = InMemoryNode::<HttpForkSource>::new(
             Some(
-                ForkDetails::from_network(&mock_server.url(), None, CacheConfig::None)
+                ForkDetails::from_network(&mock_server.url(), None, &CacheConfig::None)
                     .await
                     .unwrap(),
             ),
             None,
-            Default::default(),
-            Default::default(),
+            &Default::default(),
         );
 
         let result = node
@@ -831,13 +834,12 @@ mod tests {
 
         let node = InMemoryNode::<HttpForkSource>::new(
             Some(
-                ForkDetails::from_network(&mock_server.url(), None, CacheConfig::None)
+                ForkDetails::from_network(&mock_server.url(), None, &CacheConfig::None)
                     .await
                     .unwrap(),
             ),
             None,
-            Default::default(),
-            Default::default(),
+            &Default::default(),
         );
 
         let result = node
@@ -863,6 +865,7 @@ mod tests {
             l2_erc20_default_bridge: Default::default(),
             l1_weth_bridge: Default::default(),
             l2_weth_bridge: Default::default(),
+            l2_legacy_shared_bridge: Default::default(),
         };
 
         let actual_bridge_addresses = node
@@ -889,6 +892,7 @@ mod tests {
             l2_erc20_default_bridge: Some(H160::repeat_byte(0x2)),
             l1_weth_bridge: Some(H160::repeat_byte(0x3)),
             l2_weth_bridge: Some(H160::repeat_byte(0x4)),
+            l2_legacy_shared_bridge: Some(H160::repeat_byte(0x6)),
         };
         mock_server.expect(
             serde_json::json!({
@@ -912,13 +916,12 @@ mod tests {
 
         let node = InMemoryNode::<HttpForkSource>::new(
             Some(
-                ForkDetails::from_network(&mock_server.url(), None, CacheConfig::None)
+                ForkDetails::from_network(&mock_server.url(), None, &CacheConfig::None)
                     .await
                     .unwrap(),
             ),
             None,
-            Default::default(),
-            Default::default(),
+            &Default::default(),
         );
 
         let actual_bridge_addresses = node
@@ -980,13 +983,12 @@ mod tests {
 
         let node = InMemoryNode::<HttpForkSource>::new(
             Some(
-                ForkDetails::from_network(&mock_server.url(), None, CacheConfig::None)
+                ForkDetails::from_network(&mock_server.url(), None, &CacheConfig::None)
                     .await
                     .unwrap(),
             ),
             None,
-            Default::default(),
-            Default::default(),
+            &Default::default(),
         );
 
         let actual = node
@@ -1106,13 +1108,12 @@ mod tests {
 
         let node = InMemoryNode::<HttpForkSource>::new(
             Some(
-                ForkDetails::from_network(&mock_server.url(), None, CacheConfig::None)
+                ForkDetails::from_network(&mock_server.url(), None, &CacheConfig::None)
                     .await
                     .unwrap(),
             ),
             None,
-            Default::default(),
-            Default::default(),
+            &Default::default(),
         );
 
         let txns = node
@@ -1159,6 +1160,19 @@ mod tests {
             serde_json::json!({
                 "jsonrpc": "2.0",
                 "id": 0,
+                "method": "eth_chainId",
+            }),
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 0,
+                "result": "0x104",
+            }),
+        );
+
+        mock_server.expect(
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
                 "method": "zks_getBlockDetails",
                 "params": [1]
             }),
@@ -1187,13 +1201,13 @@ mod tests {
                     "status": "verified",
                     "timestamp": 1000
                 },
-                "id": 0
+                "id": 1
             }),
         );
         mock_server.expect(
             serde_json::json!({
                 "jsonrpc": "2.0",
-                "id": 1,
+                "id": 2,
                 "method": "eth_getBlockByHash",
                 "params": ["0xdaa77426c30c02a43d9fba4e841a6556c524d47030762eb14dc4af897e605d9b", true]
             }),
@@ -1225,7 +1239,7 @@ mod tests {
                     "transactionsRoot": "0x0000000000000000000000000000000000000000000000000000000000000000",
                     "uncles": []
                 },
-                "id": 1
+                "id": 2
             }),
         );
         mock_server.expect(
@@ -1252,7 +1266,7 @@ mod tests {
         mock_server.expect(
             serde_json::json!({
                 "jsonrpc": "2.0",
-                "id": 2,
+                "id": 3,
                 "method": "zks_getFeeParams",
             }),
             serde_json::json!({
@@ -1271,20 +1285,20 @@ mod tests {
                   "l1_pubdata_price": 100780475095u64
                 }
               },
-              "id": 2
+              "id": 3
             }),
         );
 
         let node = InMemoryNode::<HttpForkSource>::new(
             Some(
-                ForkDetails::from_network(&mock_server.url(), Some(1), CacheConfig::None)
+                ForkDetails::from_network(&mock_server.url(), Some(1), &CacheConfig::None)
                     .await
                     .unwrap(),
             ),
             None,
-            Default::default(),
-            Default::default(),
+            &Default::default(),
         );
+
         {
             let inner = node.get_inner();
             let writer = inner.write().unwrap();

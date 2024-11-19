@@ -6,9 +6,9 @@ use std::io::{BufReader, BufWriter};
 use std::path::Path;
 use std::result::Result;
 use std::str::FromStr;
-use zksync_basic_types::H256;
 use zksync_types::api::{Block, BridgeAddresses, Transaction, TransactionVariant};
 use zksync_types::Transaction as RawTransaction;
+use zksync_types::H256;
 
 use crate::config::cache::CacheConfig;
 
@@ -379,8 +379,8 @@ impl Cache {
 #[cfg(test)]
 mod tests {
     use tempdir::TempDir;
-    use zksync_basic_types::{H160, U64};
     use zksync_types::{Execute, ExecuteTransactionCommon};
+    use zksync_types::{H160, U64};
 
     use crate::testing;
 
@@ -436,6 +436,7 @@ mod tests {
             l2_erc20_default_bridge: Some(H160::repeat_byte(0x2)),
             l1_weth_bridge: Some(H160::repeat_byte(0x3)),
             l2_weth_bridge: Some(H160::repeat_byte(0x4)),
+            l2_legacy_shared_bridge: Some(H160::repeat_byte(0x6)),
         };
 
         let mut cache = Cache::new(CacheConfig::Memory);
@@ -501,6 +502,7 @@ mod tests {
             l2_erc20_default_bridge: Some(H160::repeat_byte(0x2)),
             l1_weth_bridge: Some(H160::repeat_byte(0x3)),
             l2_weth_bridge: Some(H160::repeat_byte(0x4)),
+            l2_legacy_shared_bridge: Some(H160::repeat_byte(0x6)),
         };
 
         let cache_dir = TempDir::new("cache-test").expect("failed creating temporary dir");
@@ -601,6 +603,7 @@ mod tests {
             l1_erc20_default_bridge: Some(H160::repeat_byte(0x1)),
             l1_weth_bridge: Some(H160::repeat_byte(0x3)),
             l2_weth_bridge: Some(H160::repeat_byte(0x4)),
+            l2_legacy_shared_bridge: Some(H160::repeat_byte(0x6)),
         };
 
         let cache_dir = TempDir::new("cache-test").expect("failed creating temporary dir");
