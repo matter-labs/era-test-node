@@ -43,8 +43,10 @@ use zksync_types::{
     H256, H64, MAX_L2_TX_GAS_LIMIT, SYSTEM_CONTEXT_ADDRESS, SYSTEM_CONTEXT_BLOCK_INFO_POSITION,
     U256, U64,
 };
-use zksync_utils::{bytecode::hash_bytecode, h256_to_account_address, h256_to_u256, u256_to_h256};
+use zksync_utils::h256_to_account_address;
+use zksync_basic_types::{h256_to_u256, u256_to_h256};
 use zksync_web3_decl::error::Web3Error;
+use zksync_types::bytecode::BytecodeHash;
 
 use crate::node::time::TimestampManager;
 use crate::{
@@ -1731,7 +1733,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
 
         let code_key = get_code_key(address);
 
-        let bytecode_hash = hash_bytecode(bytecode);
+        let bytecode_hash = BytecodeHash::for_bytecode(bytecode).value();
 
         inner
             .fork_storage

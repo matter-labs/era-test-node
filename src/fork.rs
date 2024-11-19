@@ -29,7 +29,8 @@ use zksync_types::{
 };
 
 use zksync_multivm::interface::storage::ReadStorage;
-use zksync_utils::{bytecode::hash_bytecode, h256_to_u256};
+use zksync_basic_types::{h256_to_u256};
+use zksync_types::bytecode::BytecodeHash;
 
 use zksync_web3_decl::{
     client::{Client, L2},
@@ -141,7 +142,7 @@ impl<S: ForkSource> ForkStorage<S> {
             inner: Arc::new(RwLock::new(ForkStorageInner {
                 raw_storage: InMemoryStorage::with_system_contracts_and_chain_id(
                     chain_id,
-                    hash_bytecode,
+                    |x| BytecodeHash::for_bytecode(x).value(),
                     system_contracts_options,
                     use_evm_emulator,
                 ),

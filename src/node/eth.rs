@@ -19,7 +19,7 @@ use zksync_types::{
     web3::{self, Bytes},
     AccountTreeId, Address, H160, H256, U256, U64,
 };
-use zksync_utils::{h256_to_u256, u256_to_h256};
+use zksync_basic_types::{h256_to_u256, u256_to_h256};
 use zksync_web3_decl::{
     error::Web3Error,
     types::{FeeHistory, Filter, FilterChanges, SyncState},
@@ -593,6 +593,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> EthNamespa
                         gas_price: Some(U256::from(0)),
                         gas: Default::default(),
                         input: input_data.data.into(),
+                        y_parity: None,
                         v: Some(chain_id.into()),
                         r: Some(U256::zero()),
                         s: Some(U256::zero()),

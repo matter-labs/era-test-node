@@ -13,7 +13,7 @@ use zksync_types::{
     AccountTreeId, Address, ExecuteTransactionCommon, L1BatchNumber, L2BlockNumber,
     ProtocolVersionId, Transaction, H160, H256, L2_BASE_TOKEN_ADDRESS, U256,
 };
-use zksync_utils::h256_to_u256;
+use zksync_basic_types::{h256_to_u256};
 use zksync_web3_decl::error::Web3Error;
 
 use crate::{
@@ -382,10 +382,13 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> ZksNamespa
                         status: BlockStatus::Verified,
                         commit_tx_hash: None,
                         committed_at: None,
+                        commit_chain_id: None,
                         prove_tx_hash: None,
                         proven_at: None,
+                        prove_chain_id: None,
                         execute_tx_hash: None,
                         executed_at: None,
+                        execute_chain_id: None,
                         l1_gas_price: 0,
                         l2_fair_gas_price: reader.fee_input_provider.l2_gas_price,
                         fair_pubdata_price: Some(reader.fee_input_provider.l1_pubdata_price),
@@ -583,7 +586,7 @@ mod tests {
         transaction_request::CallRequest,
         Address, H160, H256,
     };
-    use zksync_utils::u256_to_h256;
+    use zksync_basic_types::u256_to_h256;
 
     use super::*;
     use crate::{

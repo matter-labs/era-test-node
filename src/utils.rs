@@ -18,6 +18,7 @@ use zksync_types::{
     CONTRACT_DEPLOYER_ADDRESS, H256, U256, U64,
 };
 use zksync_utils::bytes_to_be_words;
+use zksync_types::bytecode::BytecodeHash;
 use zksync_web3_decl::error::Web3Error;
 
 use crate::{
@@ -59,9 +60,8 @@ pub fn to_human_size(input: U256) -> String {
 }
 
 pub fn bytecode_to_factory_dep(bytecode: Vec<u8>) -> Result<(U256, Vec<U256>), anyhow::Error> {
-    zksync_utils::bytecode::validate_bytecode(&bytecode).context("Invalid bytecode")?;
-    let bytecode_hash = zksync_utils::bytecode::hash_bytecode(&bytecode);
-    let bytecode_hash = U256::from_big_endian(bytecode_hash.as_bytes());
+    zksync_basic_types::bytecode::validate_bytecode(&bytecode).context("Invalid bytecode")?;
+    let bytecode_hash = zksync_types::bytecode::BytecodeHash::for_bytecode(&bytecode).value_u256();
 
     let bytecode_words = bytes_to_be_words(bytecode);
 
