@@ -27,7 +27,7 @@ use zksync_types::block::pack_block_info;
 use zksync_types::{fee::Fee, l2::L2Tx, Address, L2ChainId, Nonce, ProtocolVersionId, H256, U256};
 use zksync_types::{AccountTreeId, L1BatchNumber, L2BlockNumber, H160, U64};
 use zksync_types::{K256PrivateKey, StorageKey};
-use zksync_utils::u256_to_h256;
+use zksync_types::u256_to_h256;
 
 /// Configuration for the [MockServer]'s initial block.
 #[derive(Default, Debug, Clone)]
@@ -670,7 +670,7 @@ pub fn default_tx_execution_info() -> TxExecutionInfo {
             logs: Default::default(),
             statistics: Default::default(),
             refunds: Default::default(),
-            new_known_factory_deps: None,
+            dynamic_factory_deps: Default::default(),
         },
     }
 }
@@ -889,7 +889,7 @@ impl ForkSource for ExternalStorage {
 mod test {
     use maplit::hashmap;
     use zksync_types::block::unpack_block_info;
-    use zksync_utils::h256_to_u256;
+    use zksync_types::h256_to_u256;
 
     use super::*;
     use crate::http_fork_source::HttpForkSource;

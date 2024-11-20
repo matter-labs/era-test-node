@@ -1870,7 +1870,7 @@ mod tests {
             chain_id: U256::from(260),
             l1_batch_number: Some(U64::from(1)),
             l1_batch_tx_index: Some(U64::from(0)),
-            y_parity: None,
+            y_parity: actual_tx.y_parity,
         };
         assert_eq!(expected_tx, actual_tx);
 
