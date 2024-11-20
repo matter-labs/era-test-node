@@ -12,12 +12,8 @@ use zksync_multivm::{
     vm_latest::{HistoryDisabled, Vm},
 };
 use zksync_types::{
-    api::{BlockNumber, DebugCall, DebugCallType},
-    l2::L2Tx,
-    web3::Bytes,
-    CONTRACT_DEPLOYER_ADDRESS, H256, U256, U64,
+    api::{BlockNumber, DebugCall, DebugCallType}, bytecode::BytecodeHash, l2::L2Tx, web3::Bytes, CONTRACT_DEPLOYER_ADDRESS, H256, U256, U64
 };
-use zksync_utils::bytes_to_be_words;
 use zksync_web3_decl::error::Web3Error;
 
 use crate::{
@@ -59,13 +55,22 @@ pub fn to_human_size(input: U256) -> String {
 }
 
 pub fn bytecode_to_factory_dep(bytecode: Vec<u8>) -> Result<(U256, Vec<U256>), anyhow::Error> {
-    zksync_utils::bytecode::validate_bytecode(&bytecode).context("Invalid bytecode")?;
-    let bytecode_hash = zksync_utils::bytecode::hash_bytecode(&bytecode);
+    zksync_types::bytecode::validate_bytecode(&bytecode).context("Invalid bytecode")?;
+    let bytecode_hash = BytecodeHash::for_bytecode(&bytecode).value();
     let bytecode_hash = U256::from_big_endian(bytecode_hash.as_bytes());
 
-    let bytecode_words = bytes_to_be_words(bytecode);
+    let bytecode_words = bytes_to_be_words(&bytecode);
 
     Ok((bytecode_hash, bytecode_words))
+}
+
+pub fn bytes_to_be_words(bytes: &[u8]) -> Vec<U256> {
+    assert_eq!(
+        bytes.len() % 32,
+        0,
+        "Bytes must be divisible by 32 to split into chunks"
+    );
+    bytes.chunks(32).map(U256::from_big_endian).collect()
 }
 
 /// Creates and inserts a given number of empty blocks into the node, with a given interval between them.

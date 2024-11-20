@@ -7,19 +7,12 @@ use itertools::Itertools;
 use zksync_multivm::interface::ExecutionResult;
 use zksync_multivm::vm_latest::constants::ETH_CALL_GAS_LIMIT;
 use zksync_types::{
-    api::{Block, BlockIdVariant, BlockNumber, TransactionVariant},
-    fee::Fee,
-    get_code_key, get_nonce_key,
-    l2::L2Tx,
-    transaction_request::TransactionRequest,
-    utils::storage_key_for_standard_token_balance,
-    PackedEthSignature, StorageKey, L2_BASE_TOKEN_ADDRESS, MAX_L1_TRANSACTION_GAS_LIMIT,
+    api::{Block, BlockIdVariant, BlockNumber, TransactionVariant}, fee::Fee, get_code_key, get_nonce_key, h256_to_u256, l2::L2Tx, transaction_request::TransactionRequest, u256_to_h256, utils::storage_key_for_standard_token_balance, PackedEthSignature, StorageKey, L2_BASE_TOKEN_ADDRESS, MAX_L1_TRANSACTION_GAS_LIMIT
 };
 use zksync_types::{
     web3::{self, Bytes},
     AccountTreeId, Address, H160, H256, U256, U64,
 };
-use zksync_utils::{h256_to_u256, u256_to_h256};
 use zksync_web3_decl::{
     error::Web3Error,
     types::{FeeHistory, Filter, FilterChanges, SyncState},
@@ -616,6 +609,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> EthNamespa
                         chain_id: U256::from(chain_id),
                         l1_batch_number: Some(U64::from(info.batch_number as u64)),
                         l1_batch_tx_index: None,
+                        y_parity: None,
                     })
                 }).or_else(|| {
                     reader
@@ -1876,6 +1870,7 @@ mod tests {
             chain_id: U256::from(260),
             l1_batch_number: Some(U64::from(1)),
             l1_batch_tx_index: Some(U64::from(0)),
+            y_parity: None,
         };
         assert_eq!(expected_tx, actual_tx);
 

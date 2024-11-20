@@ -15,7 +15,7 @@ use std::{
 
 use eyre::eyre;
 use tokio::runtime::Builder;
-use zksync_types::{Address, L1BatchNumber, L2BlockNumber, L2ChainId, H256, U256, U64};
+use zksync_types::{h256_to_u256, Address, L1BatchNumber, L2BlockNumber, L2ChainId, H256, U256, U64};
 
 use zksync_types::{
     api::{
@@ -29,7 +29,6 @@ use zksync_types::{
 };
 
 use zksync_multivm::interface::storage::ReadStorage;
-use zksync_utils::{bytecode::hash_bytecode, h256_to_u256};
 
 use zksync_web3_decl::{
     client::{Client, L2},
@@ -141,7 +140,6 @@ impl<S: ForkSource> ForkStorage<S> {
             inner: Arc::new(RwLock::new(ForkStorageInner {
                 raw_storage: InMemoryStorage::with_system_contracts_and_chain_id(
                     chain_id,
-                    hash_bytecode,
                     system_contracts_options,
                     use_evm_emulator,
                 ),

@@ -30,20 +30,8 @@ use zksync_multivm::{
     VmVersion,
 };
 use zksync_types::{
-    api::{Block, DebugCall, Log, TransactionReceipt, TransactionVariant},
-    block::{build_bloom, unpack_block_info, L2BlockHasher},
-    fee::Fee,
-    fee_model::{BatchFeeInput, PubdataIndependentBatchFeeModelInput},
-    get_code_key, get_nonce_key,
-    l2::{L2Tx, TransactionType},
-    utils::{decompose_full_nonce, nonces_to_full_nonce, storage_key_for_eth_balance},
-    web3::{keccak256, Bytes, Index},
-    AccountTreeId, Address, BloomInput, L1BatchNumber, L2BlockNumber, PackedEthSignature,
-    StorageKey, StorageValue, Transaction, ACCOUNT_CODE_STORAGE_ADDRESS, EMPTY_UNCLES_HASH, H160,
-    H256, H64, MAX_L2_TX_GAS_LIMIT, SYSTEM_CONTEXT_ADDRESS, SYSTEM_CONTEXT_BLOCK_INFO_POSITION,
-    U256, U64,
+    api::{Block, DebugCall, Log, TransactionReceipt, TransactionVariant}, block::{build_bloom, unpack_block_info, L2BlockHasher}, bytecode::BytecodeHash, fee::Fee, fee_model::{BatchFeeInput, PubdataIndependentBatchFeeModelInput}, get_code_key, get_nonce_key, h256_to_address, h256_to_u256, l2::{L2Tx, TransactionType}, u256_to_h256, utils::{decompose_full_nonce, nonces_to_full_nonce, storage_key_for_eth_balance}, web3::{keccak256, Bytes, Index}, AccountTreeId, Address, BloomInput, L1BatchNumber, L2BlockNumber, PackedEthSignature, StorageKey, StorageValue, Transaction, ACCOUNT_CODE_STORAGE_ADDRESS, EMPTY_UNCLES_HASH, H160, H256, H64, MAX_L2_TX_GAS_LIMIT, SYSTEM_CONTEXT_ADDRESS, SYSTEM_CONTEXT_BLOCK_INFO_POSITION, U256, U64
 };
-use zksync_utils::{bytecode::hash_bytecode, h256_to_account_address, h256_to_u256, u256_to_h256};
 use zksync_web3_decl::error::Web3Error;
 
 use crate::{
@@ -860,7 +848,7 @@ pub struct InMemoryNode<S: Clone> {
 fn contract_address_from_tx_result(execution_result: &VmExecutionResultAndLogs) -> Option<H160> {
     for query in execution_result.logs.storage_logs.iter().rev() {
         if query.log.is_write() && query.log.key.address() == &ACCOUNT_CODE_STORAGE_ADDRESS {
-            return Some(h256_to_account_address(query.log.key.key()));
+            return Some(h256_to_address(query.log.key.key()));
         }
     }
     None
@@ -1727,7 +1715,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
 
         let code_key = get_code_key(address);
 
-        let bytecode_hash = hash_bytecode(bytecode);
+        let bytecode_hash = BytecodeHash::for_bytecode(bytecode).value();
 
         inner
             .fork_storage

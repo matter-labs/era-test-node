@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 pub mod system_contracts;
 use zksync_types::{
-    get_code_key, get_system_context_init_logs, L2ChainId, StorageKey, StorageLog, StorageValue,
-    H256,
+    bytecode::BytecodeHash, get_code_key, get_system_context_init_logs, L2ChainId, StorageKey, StorageLog, StorageValue, H256
 };
 pub mod storage_view;
 use zksync_multivm::interface::storage::ReadStorage;
@@ -18,7 +17,6 @@ impl InMemoryStorage {
     /// Constructs a storage that contains system smart contracts (with a given chain id).
     pub fn with_system_contracts_and_chain_id(
         chain_id: L2ChainId,
-        bytecode_hasher: impl Fn(&[u8]) -> H256,
         system_contracts_options: &crate::system_contracts::Options,
         use_evm_emulator: bool,
     ) -> Self {
@@ -33,7 +31,7 @@ impl InMemoryStorage {
             .iter()
             .map(|contract| {
                 let deployer_code_key = get_code_key(contract.account_id.address());
-                StorageLog::new_write_log(deployer_code_key, bytecode_hasher(&contract.bytecode))
+                StorageLog::new_write_log(deployer_code_key, BytecodeHash::for_bytecode(&contract.bytecode).value())
             })
             .chain(system_context_init_log)
             .filter_map(|log| (log.is_write()).then_some((log.key, log.value)))
@@ -41,7 +39,7 @@ impl InMemoryStorage {
 
         let factory_deps = contracts
             .into_iter()
-            .map(|contract| (bytecode_hasher(&contract.bytecode), contract.bytecode))
+            .map(|contract| (BytecodeHash::for_bytecode(&contract.bytecode).value(), contract.bytecode))
             .collect();
         Self {
             state,

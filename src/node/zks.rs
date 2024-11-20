@@ -7,13 +7,8 @@ use zksync_types::{
     api::{
         BlockDetails, BlockDetailsBase, BlockStatus, BridgeAddresses, Proof, ProtocolVersion,
         TransactionDetails, TransactionStatus, TransactionVariant,
-    },
-    fee::Fee,
-    utils::storage_key_for_standard_token_balance,
-    AccountTreeId, Address, ExecuteTransactionCommon, L1BatchNumber, L2BlockNumber,
-    ProtocolVersionId, Transaction, H160, H256, L2_BASE_TOKEN_ADDRESS, U256,
+    }, fee::Fee, h256_to_u256, utils::storage_key_for_standard_token_balance, AccountTreeId, Address, ExecuteTransactionCommon, L1BatchNumber, L2BlockNumber, ProtocolVersionId, Transaction, H160, H256, L2_BASE_TOKEN_ADDRESS, U256
 };
-use zksync_utils::h256_to_u256;
 use zksync_web3_decl::error::Web3Error;
 
 use crate::{
@@ -583,7 +578,7 @@ mod tests {
         transaction_request::CallRequest,
         Address, H160, H256,
     };
-    use zksync_utils::u256_to_h256;
+    use zksync_types::u256_to_h256;
 
     use super::*;
     use crate::{

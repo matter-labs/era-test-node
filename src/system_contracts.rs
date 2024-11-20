@@ -5,8 +5,7 @@ use zksync_contracts::{
     SystemContractCode,
 };
 use zksync_multivm::interface::TxExecutionMode;
-use zksync_types::system_contracts::get_system_smart_contracts;
-use zksync_utils::{bytecode::hash_bytecode, bytes_to_be_words};
+use zksync_types::{bytecode::BytecodeHash, system_contracts::get_system_smart_contracts};
 
 use crate::deps::system_contracts::{bytecode_from_slice, COMPILED_IN_SYSTEM_CONTRACTS};
 
@@ -103,10 +102,10 @@ fn bsc_load_with_bootloader(
     options: &Options,
     use_evm_emulator: bool,
 ) -> BaseSystemContracts {
-    let hash = hash_bytecode(&bootloader_bytecode);
+    let hash = BytecodeHash::for_bytecode(&bootloader_bytecode).value();
 
     let bootloader = SystemContractCode {
-        code: bytes_to_be_words(bootloader_bytecode),
+        code: bootloader_bytecode,
         hash,
     };
 
@@ -122,9 +121,9 @@ fn bsc_load_with_bootloader(
         ),
     };
 
-    let aa_hash = hash_bytecode(&aa_bytecode);
+    let aa_hash = BytecodeHash::for_bytecode(&aa_bytecode).value();
     let default_aa = SystemContractCode {
-        code: bytes_to_be_words(aa_bytecode),
+        code: aa_bytecode,
         hash: aa_hash,
     };
 
@@ -135,9 +134,9 @@ fn bsc_load_with_bootloader(
                 panic!("no built-in EVM emulator yet")
             }
         };
-        let evm_emulator_hash = hash_bytecode(&evm_emulator_bytecode);
+        let evm_emulator_hash = BytecodeHash::for_bytecode(&evm_emulator_bytecode).value();
         Some(SystemContractCode {
-            code: bytes_to_be_words(evm_emulator_bytecode),
+            code: evm_emulator_bytecode,
             hash: evm_emulator_hash,
         })
     } else {

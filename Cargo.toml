@@ -11,11 +11,11 @@ categories = ["cryptography"]
 publish = false                                             # We don't want to publish our binaries.
 
 [dependencies]
-zksync_multivm = { git = "https://github.com/matter-labs/zksync-era.git", rev = "6c034f6e180cc92e99766f14c8840c90efa56cec" }
-zksync_contracts = { git = "https://github.com/matter-labs/zksync-era.git", rev = "6c034f6e180cc92e99766f14c8840c90efa56cec" }
-zksync_types = { git = "https://github.com/matter-labs/zksync-era.git", rev = "6c034f6e180cc92e99766f14c8840c90efa56cec" }
-zksync_utils = { git = "https://github.com/matter-labs/zksync-era.git", rev = "6c034f6e180cc92e99766f14c8840c90efa56cec" }
-zksync_web3_decl = { git = "https://github.com/matter-labs/zksync-era.git", rev = "6c034f6e180cc92e99766f14c8840c90efa56cec", features = [
+zksync_multivm = { git = "https://github.com/matter-labs/zksync-era.git", rev = "1715766a1318866a387beeec0b27e1f09dede7de" }
+zksync_contracts = { git = "https://github.com/matter-labs/zksync-era.git", rev = "1715766a1318866a387beeec0b27e1f09dede7de" }
+zksync_types = { git = "https://github.com/matter-labs/zksync-era.git", rev = "1715766a1318866a387beeec0b27e1f09dede7de" }
+zksync_utils = { git = "https://github.com/matter-labs/zksync-era.git", rev = "1715766a1318866a387beeec0b27e1f09dede7de" }
+zksync_web3_decl = { git = "https://github.com/matter-labs/zksync-era.git", rev = "1715766a1318866a387beeec0b27e1f09dede7de", features = [
     "server",
 ] }
 sha3 = "0.10.6"

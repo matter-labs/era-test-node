@@ -1,11 +1,8 @@
 use anyhow::anyhow;
 use zksync_types::{
-    get_code_key, get_nonce_key,
-    utils::{decompose_full_nonce, nonces_to_full_nonce, storage_key_for_eth_balance},
-    StorageKey,
+    get_code_key, get_nonce_key, h256_to_u256, u256_to_h256, utils::{decompose_full_nonce, nonces_to_full_nonce, storage_key_for_eth_balance}, StorageKey
 };
 use zksync_types::{AccountTreeId, Address, U256, U64};
-use zksync_utils::{h256_to_u256, u256_to_h256};
 
 use crate::{
     fork::{ForkDetails, ForkSource},

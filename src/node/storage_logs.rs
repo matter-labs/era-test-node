@@ -12,8 +12,7 @@ use zksync_types::{
     },
     StorageKey, BOOTLOADER_ADDRESS, SYSTEM_CONTEXT_ADDRESS,
 };
-use zksync_types::{StorageLogKind, StorageLogWithPreviousValue};
-use zksync_utils::h256_to_u256;
+use zksync_types::{h256_to_u256, StorageLogKind, StorageLogWithPreviousValue};
 
 fn is_storage_key_free(key: &StorageKey) -> bool {
     key.address() == &SYSTEM_CONTEXT_ADDRESS
