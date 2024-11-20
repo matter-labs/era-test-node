@@ -2,13 +2,11 @@ use crate::observability::Observability;
 use anyhow::anyhow;
 use bytecode_override::override_bytecodes;
 use clap::Parser;
-use colored::Colorize;
 use config::cli::{Cli, Command};
 use config::constants::{
-    DEFAULT_ESTIMATE_GAS_PRICE_SCALE_FACTOR, DEFAULT_ESTIMATE_GAS_SCALE_FACTOR,
-    LEGACY_RICH_WALLETS, RICH_WALLETS,
+    DEFAULT_ESTIMATE_GAS_PRICE_SCALE_FACTOR, DEFAULT_ESTIMATE_GAS_SCALE_FACTOR, LEGACY_RICH_WALLETS,
 };
-use config::TestNodeConfig;
+use config::ForkPrintInfo;
 use fork::{ForkDetails, ForkSource};
 use http_fork_source::HttpForkSource;
 use logging_middleware::LoggingMiddleware;
@@ -40,7 +38,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     str::FromStr,
 };
-use zksync_types::fee_model::FeeParams;
+use zksync_types::fee_model::{FeeModelConfigV2, FeeParams};
 use zksync_web3_decl::namespaces::ZksNamespaceClient;
 
 use futures::{
@@ -105,11 +103,12 @@ async fn build_json_http<
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Check for deprecated options
+    Cli::deprecated_config_option();
+
     let opt = Cli::parse();
 
-    // Try to read the [`TestNodeConfig`] file if supplied as an argument.
-    let mut config = TestNodeConfig::try_load(&opt.config).unwrap_or_default();
-    config.override_with_opts(&opt);
+    let mut config = opt.to_test_node_config().map_err(|e| anyhow!(e))?;
 
     let log_level_filter = LevelFilter::from(config.log_level);
     let log_file = File::create(&config.log_file_path)?;
@@ -122,7 +121,7 @@ async fn main() -> anyhow::Result<()> {
     let command = opt.command.as_ref().unwrap_or(&Command::Run);
     let fork_details = match command {
         Command::Run => {
-            if opt.offline {
+            if config.offline {
                 tracing::warn!(
                     "Running in offline mode: default fee parameters will be used. \
         To override, specify values in `config.toml` and use the `--config` flag."
@@ -163,7 +162,17 @@ async fn main() -> anyhow::Result<()> {
             )
             .await
             {
-                Ok(fd) => Some(fd),
+                Ok(fd) => {
+                    // Update the config here
+                    config = config
+                        .with_l1_gas_price(Some(fd.l1_gas_price))
+                        .with_l2_gas_price(Some(fd.l2_fair_gas_price))
+                        .with_l1_pubdata_price(Some(fd.fair_pubdata_price))
+                        .with_price_scale(Some(fd.estimate_gas_price_scale_factor))
+                        .with_gas_limit_scale(Some(fd.estimate_gas_scale_factor))
+                        .with_chain_id(Some(fd.chain_id.as_u64() as u32));
+                    Some(fd)
+                }
                 Err(error) => {
                     tracing::error!("cannot fork: {:?}", error);
                     return Err(anyhow!(error));
@@ -178,7 +187,17 @@ async fn main() -> anyhow::Result<()> {
             )
             .await
             {
-                Ok(fd) => Some(fd),
+                Ok(fd) => {
+                    // Update the config here
+                    config = config
+                        .with_l1_gas_price(Some(fd.l1_gas_price))
+                        .with_l2_gas_price(Some(fd.l2_fair_gas_price))
+                        .with_l1_pubdata_price(Some(fd.fair_pubdata_price))
+                        .with_price_scale(Some(fd.estimate_gas_price_scale_factor))
+                        .with_gas_limit_scale(Some(fd.estimate_gas_scale_factor))
+                        .with_chain_id(Some(fd.chain_id.as_u64() as u32));
+                    Some(fd)
+                }
                 Err(error) => {
                     tracing::error!("cannot replay: {:?}", error);
                     return Err(anyhow!(error));
@@ -217,38 +236,56 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
+    let fork_print_info = if let Some(fd) = fork_details.as_ref() {
+        let fee_model_config_v2 = match fd.fee_params {
+            Some(FeeParams::V2(fee_params_v2)) => {
+                let config = fee_params_v2.config();
+                Some(FeeModelConfigV2 {
+                    minimal_l2_gas_price: config.minimal_l2_gas_price,
+                    compute_overhead_part: config.compute_overhead_part,
+                    pubdata_overhead_part: config.pubdata_overhead_part,
+                    batch_overhead_l1_gas: config.batch_overhead_l1_gas,
+                    max_gas_per_batch: config.max_gas_per_batch,
+                    max_pubdata_per_batch: config.max_pubdata_per_batch,
+                })
+            }
+            _ => None,
+        };
+
+        Some(ForkPrintInfo {
+            network_rpc: fd.fork_source.get_fork_url().unwrap_or_default(),
+            l1_block: fd.l1_block.to_string(),
+            l2_block: fd.l2_miniblock.to_string(),
+            block_timestamp: fd.block_timestamp.to_string(),
+            fork_block_hash: format!("{:#x}", fd.l2_block.hash),
+            fee_model_config_v2,
+        })
+    } else {
+        None
+    };
+
     let node: InMemoryNode<HttpForkSource> =
         InMemoryNode::new(fork_details, Some(observability), &config);
 
-    if let Some(bytecodes_dir) = opt.override_bytecodes_dir {
-        override_bytecodes(&node, bytecodes_dir).unwrap();
+    if let Some(ref bytecodes_dir) = config.override_bytecodes_dir {
+        override_bytecodes(&node, bytecodes_dir.to_string()).unwrap();
     }
 
     if !transactions_to_replay.is_empty() {
         let _ = node.apply_txs(transactions_to_replay);
     }
 
-    tracing::info!("");
-    tracing::info!("Rich Accounts");
-    tracing::info!("=============");
+    for signer in config.genesis_accounts.iter() {
+        let address = H160::from_slice(signer.address().as_ref());
+        node.set_rich_account(address);
+    }
+    for signer in config.signer_accounts.iter() {
+        let address = H160::from_slice(signer.address().as_ref());
+        node.set_rich_account(address);
+    }
     for wallet in LEGACY_RICH_WALLETS.iter() {
         let address = wallet.0;
         node.set_rich_account(H160::from_str(address).unwrap());
-    }
-    for (index, wallet) in RICH_WALLETS.iter().enumerate() {
-        let address = wallet.0;
-        let private_key = wallet.1;
-        let mnemonic_phrase = wallet.2;
-        node.set_rich_account(H160::from_str(address).unwrap());
-        tracing::info!(
-            "Account #{}: {} ({})",
-            index,
-            address,
-            "1_000_000_000_000 ETH".cyan()
-        );
-        tracing::info!("Private Key: {}", private_key);
-        tracing::info!("Mnemonic: {}", &mnemonic_phrase.truecolor(128, 128, 128));
-        tracing::info!("");
     }
 
     let threads = build_json_http(
@@ -258,9 +295,7 @@ async fn main() -> anyhow::Result<()> {
     )
     .await;
 
-    tracing::info!("========================================");
-    tracing::info!("  Node is ready at 127.0.0.1:{}", config.port);
-    tracing::info!("========================================");
+    config.print(fork_print_info.as_ref());
 
     future::select_all(vec![threads]).await.0.unwrap();
 
