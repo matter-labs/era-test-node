@@ -1410,9 +1410,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         );
 
         match inner.config.show_gas_details {
-            ShowGasDetails::None => tracing::info!(
-                "Use --show-gas-details flag or call config_setShowGasDetails to display more info"
-            ),
+            ShowGasDetails::None => {}
             ShowGasDetails::All => {
                 let info =
                     self.display_detailed_gas_info(bootloader_debug_result.get(), spent_on_pubdata);
@@ -1439,36 +1437,34 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         for call in call_traces {
             inner.console_log_handler.handle_call_recursive(call);
         }
-        tracing::info!("");
-        let call_traces_count = if !call_traces.is_empty() {
-            // All calls/sub-calls are stored within the first call trace
-            call_traces[0].calls.len()
-        } else {
-            0
-        };
-        tracing::info!(
-            "==== {} Use --show-calls flag or call config_setShowCalls to display more info.",
-            format!("{:?} call traces. ", call_traces_count).bold()
-        );
-
+        println!("");
+        println!("");
         if inner.config.show_calls != ShowCalls::None {
-            for call in call_traces {
-                formatter::print_call(
+            tracing::info!("[Transaction Execution]");
+            let num_calls = call_traces.len();
+            for (i, call) in call_traces.iter().enumerate() {
+                let is_last_sibling = i == num_calls - 1;
+                formatter::print_call2(
+                    tx.initiator_account(),
                     call,
-                    0,
+                    &vec![],
+                    is_last_sibling,
                     &inner.config.show_calls,
                     inner.config.show_outputs,
                     inner.config.resolve_hashes,
                 );
             }
         }
-        tracing::info!("");
-        tracing::info!(
-            "==== {}",
-            format!("{} events", tx_result.logs.events.len()).bold()
-        );
-        for event in &tx_result.logs.events {
-            formatter::print_event(event, inner.config.resolve_hashes);
+        println!("");
+        if inner.config.show_event_logs {
+            tracing::info!("");
+            tracing::info!(
+                "==== {}",
+                format!("{} events", tx_result.logs.events.len()).bold()
+            );
+            for event in &tx_result.logs.events {
+                formatter::print_event(event, inner.config.resolve_hashes);
+            }
         }
 
         let mut bytecodes = HashMap::new();
@@ -1498,12 +1494,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         let tx_hash = l2_tx.hash();
         let transaction_type = l2_tx.common_data.transaction_type;
 
-        tracing::info!("");
-        tracing::info!("Validating {}", format!("{:?}", tx_hash).bold());
-
         self.validate_tx(&l2_tx)?;
-
-        tracing::info!("Executing {}", format!("{:?}", tx_hash).bold());
 
         {
             let mut inner = self
