@@ -280,6 +280,7 @@ pub fn format_gwei(value: U256) -> String {
     format!("{:.8} gwei", full_gwei)
 }
 
+/// Calculates the cost of a transaction in ETH.
 pub fn calculate_eth_cost(gas_price_in_wei_per_gas: u64, gas_used: u64) -> f64 {
     // Convert gas price from wei to gwei
     let gas_price_in_gwei = gas_price_in_wei_per_gas as f64 / 1e9;
@@ -288,9 +289,7 @@ pub fn calculate_eth_cost(gas_price_in_wei_per_gas: u64, gas_used: u64) -> f64 {
     let total_cost_in_gwei = gas_price_in_gwei * gas_used as f64;
 
     // Convert total cost from gwei to ETH
-    let total_cost_in_eth = total_cost_in_gwei / 1e9;
-
-    total_cost_in_eth
+    total_cost_in_gwei / 1e9
 }
 
 #[cfg(test)]

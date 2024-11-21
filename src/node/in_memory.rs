@@ -1404,7 +1404,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
             ExecutionResult::Halt { .. } => "HALTED",
         };
 
-        formatter::log_transaction_summary(
+        formatter::print_transaction_summary(
             inner.config.get_l2_gas_price(),
             &tx,
             &tx_result,
