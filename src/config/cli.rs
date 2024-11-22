@@ -52,11 +52,16 @@ pub struct Cli {
     /// Show call debug information.
     pub show_calls: Option<ShowCalls>,
 
-    #[arg(long, help_heading = "Debugging Options")]
+    #[arg(
+        short,
+        long,
+        requires = "show_calls",
+        help_heading = "Debugging Options"
+    )]
     /// Show call output information.
     pub show_outputs: Option<bool>,
 
-    #[arg(long, help_heading = "Debugging Options")]
+    #[arg(short, long, help_heading = "Debugging Options")]
     /// Show event logs information.
     pub show_event_logs: Option<bool>,
 
@@ -72,7 +77,7 @@ pub struct Cli {
     /// Show gas details information.
     pub show_gas_details: Option<ShowGasDetails>,
 
-    #[arg(long, help_heading = "Debugging Options")]
+    #[arg(short, long, help_heading = "Debugging Options")]
     /// If true, the tool will try to resolve ABI and topic names for better readability.
     /// May decrease performance.
     pub resolve_hashes: Option<bool>,
