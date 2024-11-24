@@ -1088,10 +1088,16 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         vm.push_transaction(tx.clone());
 
         let call_tracer_result = Arc::new(OnceCell::default());
+        let error_flags_result = Arc::new(OnceCell::new());
+        let bootloader_debug_result = Arc::new(OnceCell::default());
 
         let tracers = vec![
-            CallErrorTracer::new().into_tracer_pointer(),
+            CallErrorTracer::new(error_flags_result.clone()).into_tracer_pointer(),
             CallTracer::new(call_tracer_result.clone()).into_tracer_pointer(),
+            BootloaderDebugTracer {
+                result: bootloader_debug_result.clone(),
+            }
+            .into_tracer_pointer(),
         ];
         let tx_result = vm.inspect(&mut tracers.into(), InspectExecutionMode::OneTx);
 
@@ -1100,28 +1106,33 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
             .take()
             .unwrap_or_default();
 
-        match &tx_result.result {
-            ExecutionResult::Success { output } => {
-                tracing::info!("Call: {}", "SUCCESS".green());
-                let output_bytes = zksync_types::web3::Bytes::from(output.clone());
-                tracing::info!("Output: {}", serde_json::to_string(&output_bytes).unwrap());
-            }
-            ExecutionResult::Revert { output } => {
-                tracing::info!("Call: {}: {}", "FAILED".red(), output);
-            }
-            ExecutionResult::Halt { reason } => {
-                tracing::info!("Call: {} {}", "HALTED".red(), reason)
-            }
-        };
+        let error_flags = Arc::try_unwrap(error_flags_result)
+            .unwrap()
+            .take()
+            .unwrap_or_default();
 
         // TODO: Properly handle console logs. Consider adding a flag to enable console logs.
         // Maybe related to issue: https://github.com/matter-labs/era-test-node/issues/205
-        tracing::info!("=== Console Logs: ");
+        tracing::info!("=== ???Console Logs: ");
         for call in &call_traces {
             inner.console_log_handler.handle_call_recursive(call);
         }
         tracing::info!("");
 
+        println!("ERROR FLAGS2: {:?}", error_flags);
+        let spent_on_pubdata =
+            tx_result.statistics.gas_used - tx_result.statistics.computational_gas_used as u64;
+        println!("SPENT ON PUBDATA: {:?}", spent_on_pubdata);
+        println!("tx_result stats: {:?}", tx_result.statistics);
+
+        if inner.config.show_gas_details != ShowGasDetails::None {
+            self.display_detailed_gas_info(bootloader_debug_result.get(), spent_on_pubdata)
+                .unwrap_or_else(|err| {
+                    tracing::error!("{}", format!("Cannot display gas details: {err}").on_red());
+                });
+        }
+        // TODO: consider passing error_flags to the formatter
+        // could then provide more human readable error messages
         tracing::info!(
             "[Transaction Execution] ({} calls)",
             call_traces[0].calls.len()
@@ -1140,6 +1151,23 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
                 inner.config.resolve_hashes,
             );
         }
+        // TODO:
+        // Update the logs for Failed and Halted
+        // Pass the error_flags, along with call_traces
+        // Extract the error and inform user properly using structered error logs
+        match &tx_result.result {
+            ExecutionResult::Success { output } => {
+                tracing::info!("Call: {}", "SUCCESS".green());
+                let output_bytes = zksync_types::web3::Bytes::from(output.clone());
+                tracing::info!("Output: {}", serde_json::to_string(&output_bytes).unwrap());
+            }
+            ExecutionResult::Revert { output } => {
+                tracing::info!("Call: {}: {}", "FffAILED".red(), output);
+            }
+            ExecutionResult::Halt { reason } => {
+                tracing::info!("Call: {} {}", "HALTED".red(), reason)
+            }
+        };
 
         Ok(tx_result.result)
     }
@@ -1242,9 +1270,10 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
 
         let call_tracer_result = Arc::new(OnceCell::default());
         let bootloader_debug_result = Arc::new(OnceCell::default());
+        let error_flags_result = Arc::new(OnceCell::new());
 
         let tracers = vec![
-            CallErrorTracer::new().into_tracer_pointer(),
+            CallErrorTracer::new(error_flags_result.clone()).into_tracer_pointer(),
             CallTracer::new(call_tracer_result.clone()).into_tracer_pointer(),
             BootloaderDebugTracer {
                 result: bootloader_debug_result.clone(),
@@ -1257,12 +1286,17 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
 
         let call_traces = call_tracer_result.get().unwrap();
 
+        if let Some(error_flags) = error_flags_result.get() {
+            println!("ERROR FLAGS: {:?}", error_flags);
+            // Handle the error flags as needed
+        };
+
         let spent_on_pubdata =
             tx_result.statistics.gas_used - tx_result.statistics.computational_gas_used as u64;
 
         let status = match &tx_result.result {
             ExecutionResult::Success { .. } => "SUCCESS",
-            ExecutionResult::Revert { .. } => "FAILED",
+            ExecutionResult::Revert { .. } => "FAILEssDDD",
             ExecutionResult::Halt { .. } => "HALTED",
         };
 
@@ -1326,7 +1360,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         // TODO: Properly handle console logs. Consider adding a flag to enable console logs.
         // Maybe related to issue: https://github.com/matter-labs/era-test-node/issues/205
         tracing::info!("");
-        tracing::info!("==== Console logs: ");
+        tracing::info!("==== Console logs???: ");
         for call in call_traces {
             inner.console_log_handler.handle_call_recursive(call);
         }
