@@ -1126,7 +1126,10 @@ pub fn print_transaction_summary(
             let output_bytes = zksync_types::web3::Bytes::from(output.clone());
             tracing::info!("Output: {}", serde_json::to_string(&output_bytes).unwrap());
         }
-        // Ignore revert output as it is already logged in the structured log
+        // We need to handle revert and halt in case folks do not run with show-calls
+        // and do not see the structured logs.
+        // Should have Insights for revert and halt.
+        // Errors defined here: https://github.com/matter-labs/zksync-era/blob/main/core/lib/vm_interface/src/types/errors/tx_revert_reason.rs
         ExecutionResult::Revert { output: _ } => {}
         ExecutionResult::Halt { reason } => {
             tracing::info!("Halted: {:?}", reason);
