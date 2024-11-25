@@ -909,23 +909,23 @@ fn format_error_insight(
     error_flag: &ErrorFlags,
     tx_result: &VmExecutionStatistics,
 ) -> Option<String> {
-    match error_flag {
-        &ErrorFlags::INVALID_OPCODE => {
+    match *error_flag {
+        ErrorFlags::INVALID_OPCODE => {
             Some("The transaction attempted to execute an invalid opcode. This could indicate a bug in the contract or an unsupported operation.".to_string())
         }
-        &ErrorFlags::NOT_ENOUGH_ERGS => {
+        ErrorFlags::NOT_ENOUGH_ERGS => {
             Some(format!(
                 "The transaction ran out of gas. Total gas used: {}. Consider increasing the gas limit or refactoring contract.",
                 to_human_size(tx_result.gas_used.into()).bold()
             ))
         }
-        &ErrorFlags::PRIVILAGED_ACCESS_NOT_FROM_KERNEL => {
+        ErrorFlags::PRIVILAGED_ACCESS_NOT_FROM_KERNEL => {
             Some("A privileged operation was attempted by a non-kernel account. Ensure that only authorized accounts perform kernel-level operations.".to_string())
         }
-        &ErrorFlags::WRITE_IN_STATIC_CONTEXT => {
+        ErrorFlags::WRITE_IN_STATIC_CONTEXT => {
             Some("A write operation was attempted in a static context. Modify the contract logic to avoid state-changing operations in static calls.".to_string())
         }
-        &ErrorFlags::CALLSTACK_IS_FULL => {
+        ErrorFlags::CALLSTACK_IS_FULL => {
             Some("The call stack limit was reached. This might indicate deep or excessive recursion in the contract.".to_string())
         }
         _ => None,
@@ -939,7 +939,10 @@ fn format_transaction_error_summary(
 ) -> Vec<String> {
     match &tx.common_data {
         ExecuteTransactionCommon::L1(_) => {
-            vec![format!("{}", format!("Transaction Type: L1").bold().red())]
+            vec![format!(
+                "{}",
+                "Transaction Type: L1".to_string().bold().red()
+            )]
         }
         ExecuteTransactionCommon::L2(data) => {
             let mut details = vec![
@@ -998,7 +1001,10 @@ fn format_transaction_error_summary(
         }
         ExecuteTransactionCommon::ProtocolUpgrade(_) => vec![format!(
             "{}",
-            format!("Transaction Type: Protocol Upgrade").bold().red()
+            "Transaction Type: Protocol Upgrade"
+                .to_string()
+                .bold()
+                .red()
         )],
     }
 }
