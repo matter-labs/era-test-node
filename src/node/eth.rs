@@ -2965,7 +2965,7 @@ mod tests {
             blocks: inner.blocks.clone(),
             block_hashes: inner.block_hashes.clone(),
             filters: inner.filters.clone(),
-            impersonated_accounts: inner.impersonation.impersonated_accounts(),
+            impersonation_state: inner.impersonation.state(),
             rich_accounts: inner.rich_accounts.clone(),
             previous_states: inner.previous_states.clone(),
             raw_storage: storage.raw_storage.clone(),
@@ -3002,8 +3002,8 @@ mod tests {
         assert_eq!(expected_snapshot.block_hashes, actual_snapshot.block_hashes);
         assert_eq!(expected_snapshot.filters, actual_snapshot.filters);
         assert_eq!(
-            expected_snapshot.impersonated_accounts,
-            actual_snapshot.impersonated_accounts
+            expected_snapshot.impersonation_state,
+            actual_snapshot.impersonation_state
         );
         assert_eq!(
             expected_snapshot.rich_accounts,
@@ -3072,7 +3072,7 @@ mod tests {
                 blocks: inner.blocks.clone(),
                 block_hashes: inner.block_hashes.clone(),
                 filters: inner.filters.clone(),
-                impersonated_accounts: inner.impersonation.impersonated_accounts(),
+                impersonation_state: inner.impersonation.state(),
                 rich_accounts: inner.rich_accounts.clone(),
                 previous_states: inner.previous_states.clone(),
                 raw_storage: storage.raw_storage.clone(),
@@ -3142,8 +3142,8 @@ mod tests {
         assert_eq!(expected_snapshot.block_hashes, inner.block_hashes);
         assert_eq!(expected_snapshot.filters, inner.filters);
         assert_eq!(
-            expected_snapshot.impersonated_accounts,
-            inner.impersonation.impersonated_accounts()
+            expected_snapshot.impersonation_state,
+            inner.impersonation.state()
         );
         assert_eq!(expected_snapshot.rich_accounts, inner.rich_accounts);
         assert_eq!(expected_snapshot.previous_states, inner.previous_states);

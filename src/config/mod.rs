@@ -1,3 +1,5 @@
+use std::net::{IpAddr, Ipv4Addr};
+
 use crate::{observability, system_contracts};
 
 use crate::config::{
@@ -101,6 +103,8 @@ pub struct TestNodeConfig {
     pub signer_accounts: Vec<PrivateKeySigner>,
     /// Whether the node operates in offline mode
     pub offline: bool,
+    /// The host the server will listen on
+    pub host: Vec<IpAddr>,
     /// Whether we need to enable the health check endpoint.
     pub health_check_endpoint: bool,
 }
@@ -148,6 +152,7 @@ impl Default for TestNodeConfig {
 
             // Offline mode disabled by default
             offline: false,
+            host: vec![IpAddr::V4(Ipv4Addr::LOCALHOST)],
             health_check_endpoint: false,
         }
     }
@@ -303,11 +308,13 @@ impl TestNodeConfig {
         );
         println!("\n");
         tracing::info!("========================================");
-        tracing::info!(
-            "  Listening on {}:{}",
-            "127.0.0.1".green(),
-            self.port.to_string().green()
-        );
+        for host in &self.host {
+            tracing::info!(
+                "  Listening on {}:{}",
+                host.to_string().green(),
+                self.port.to_string().green()
+            );
+        }
         tracing::info!("========================================");
         println!("\n");
     }
@@ -703,6 +710,16 @@ impl TestNodeConfig {
         self.offline
     }
 
+    /// Sets the host the server will listen on
+    #[must_use]
+    pub fn with_host(mut self, host: Vec<IpAddr>) -> Self {
+        self.host = if host.is_empty() {
+            vec![IpAddr::V4(Ipv4Addr::LOCALHOST)]
+        } else {
+            host
+        };
+        self
+    }
     /// Set the health check endpoint mode
     #[must_use]
     pub fn with_health_check_endpoint(mut self, health_check_endpoint: Option<bool>) -> Self {

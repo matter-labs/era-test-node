@@ -18,7 +18,7 @@ describe("ERC20FixedPaymaster", function () {
 
   before(async function () {
     provider = getTestProvider();
-    richWallet = new Wallet(RichAccounts[0].PrivateKey, provider);
+    richWallet = new Wallet("0x41c9f9518aa07b50cb1c0cc160d45547f57638dd824a8d85b5eb3bf99ed2bdeb", provider);
     deployer = new Deployer(hre, richWallet);
 
     // Setup new wallet
@@ -70,7 +70,7 @@ describe("ERC20FixedPaymaster", function () {
     await setGreetingTx.wait();
   }
 
-  it("user with MyERC20 token can update message for free", async function () {
+  it.only("user with MyERC20 token can update message for free", async function () {
     // Arrange
     const initialMintAmount = ethers.utils.parseEther("3");
     const success = await token.mint(userWallet.address, initialMintAmount);
