@@ -9,12 +9,15 @@ use futures::future::join_all;
 use lazy_static::lazy_static;
 use serde::Deserialize;
 use std::{collections::HashMap, str};
-use zksync_multivm::interface::{Call, VmEvent, VmExecutionResultAndLogs};
+use zksync_multivm::interface::{
+    Call, ExecutionResult, VmEvent, VmExecutionResultAndLogs, VmExecutionStatistics, VmRevertReason,
+};
+use zksync_multivm::zk_evm_latest::vm_state::ErrorFlags;
+use zksync_types::ExecuteTransactionCommon;
 use zksync_types::{
     fee_model::FeeModelConfigV2, Address, StorageLogWithPreviousValue, Transaction, H160, H256,
     U256,
 };
-
 // @dev elected to have GasDetails struct as we can do more with it in the future
 // We can provide more detailed understanding of gas errors and gas usage
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
@@ -140,6 +143,115 @@ impl Formatter {
         let prefix = build_prefix(&self.sibling_stack, is_last_sibling);
         tracing::info!("{}", format!("{}{}", prefix, message).red());
     }
+
+    /// Prints structured error message with insights.
+    #[allow(clippy::too_many_arguments)]
+    pub fn print_structured_error(
+        &mut self,
+        initiator: Address,
+        contract_address: Option<H160>,
+        call: &Call,
+        is_last_sibling: bool,
+        error_flag: ErrorFlags,
+        tx_result: &VmExecutionStatistics,
+        output: &VmRevertReason,
+        tx: &Transaction,
+    ) {
+        let contract_type = KNOWN_ADDRESSES
+            .get(&call.to)
+            .cloned()
+            .map(|known_address| known_address.contract_type)
+            .unwrap_or(ContractType::Unknown);
+
+        let call_type_display = format!("{:?}", call.r#type).blue();
+        let remaining_gas_display = to_human_size(call.gas.into()).yellow();
+        let gas_used_display = format!("({})", to_human_size(call.gas_used.into())).bold();
+
+        let contract_display = format_address_human_readable(
+            call.to,
+            initiator,
+            contract_address,
+            format!("{:?}", call.r#type).as_str(),
+        )
+        .unwrap_or_else(|| format!("{:}", format!("{:?}", call.to).bold()));
+
+        // Get function signature
+        let function_signature = if call.input.len() >= 4 {
+            let sig = hex::encode(&call.input[0..4]);
+            if contract_type == ContractType::Precompile {
+                format!("0x{}", sig)
+            } else {
+                block_on(async move {
+                    match resolver::decode_function_selector(&sig).await {
+                        Ok(Some(name)) => name,
+                        Ok(None) | Err(_) => format!("0x{}", sig),
+                    }
+                })
+            }
+        } else {
+            "unknown".to_string()
+        };
+
+        let function_display = function_signature.cyan().bold();
+
+        let line = format!(
+            "{} [{}] {}::{} {}",
+            call_type_display,
+            remaining_gas_display,
+            contract_display,
+            function_display,
+            gas_used_display
+        );
+
+        // Handle errors and outputs within a new indentation scope
+        self.section(&line, is_last_sibling, |call_section| {
+            if call.revert_reason.is_some() || call.error.is_some() {
+                if let Some(ref reason) = call.revert_reason {
+                    call_section.format_error(true, &format!("🔴 Revert reason: {}", reason));
+                }
+                if let Some(ref error) = call.error {
+                    call_section.format_error(true, &format!("🔴 Error: {}", error));
+                    call_section.format_error(true, &format!("🔴 Error output: {:?}", output));
+                    call_section.format_error(true, &format!("🔴 Error flag: {:?}", error_flag));
+                    if let Some(insight) = format_error_insight(&error_flag, tx_result) {
+                        call_section.format_error(true, &format!("🟡 Insight: {}", insight));
+                    }
+                    // Print failed transaction details
+                    let last_call = get_last_call(call);
+                    call_section.section(
+                        "🔴 Failed Transaction Summary",
+                        true,
+                        |summary_section| {
+                            for detail in format_transaction_error_summary(
+                                tx,
+                                last_call.gas_used,
+                                last_call.to,
+                                function_signature,
+                            ) {
+                                summary_section.format_log(true, &detail);
+                            }
+                        },
+                    );
+                }
+            }
+            // Process subcalls
+            let num_subcalls = call.calls.len();
+            for (i, subcall) in call.calls.iter().enumerate() {
+                let is_last_subcall = i == num_subcalls - 1;
+                call_section.print_structured_error(
+                    initiator,
+                    contract_address,
+                    subcall,
+                    is_last_subcall,
+                    error_flag,
+                    tx_result,
+                    output,
+                    tx,
+                );
+            }
+        });
+    }
+
     /// Prints gas details for the transaction in a structured log.
     pub fn print_gas_details(
         &mut self,
@@ -756,6 +868,105 @@ fn format_data(value: &[u8]) -> String {
         }
     }
 }
+
+fn format_error_insight(
+    error_flag: &ErrorFlags,
+    tx_result: &VmExecutionStatistics,
+) -> Option<String> {
+    match error_flag {
+        &ErrorFlags::INVALID_OPCODE => {
+            Some("The transaction attempted to execute an invalid opcode. This could indicate a bug in the contract or an unsupported operation.".to_string())
+        }
+        &ErrorFlags::NOT_ENOUGH_ERGS => {
+            Some(format!(
+                "The transaction ran out of gas. Total gas used: {}. Consider increasing the gas limit or refactoring contract.",
+                to_human_size(tx_result.gas_used.into()).bold()
+            ))
+        }
+        &ErrorFlags::PRIVILAGED_ACCESS_NOT_FROM_KERNEL => {
+            Some("A privileged operation was attempted by a non-kernel account. Ensure that only authorized accounts perform kernel-level operations.".to_string())
+        }
+        &ErrorFlags::WRITE_IN_STATIC_CONTEXT => {
+            Some("A write operation was attempted in a static context. Modify the contract logic to avoid state-changing operations in static calls.".to_string())
+        }
+        &ErrorFlags::CALLSTACK_IS_FULL => {
+            Some("The call stack limit was reached. This might indicate deep or excessive recursion in the contract.".to_string())
+        }
+        _ => None,
+    }
+}
+fn format_transaction_error_summary(
+    tx: &Transaction,
+    gas_used: u64,
+    to: H160,
+    fn_signature: String,
+) -> Vec<String> {
+    match &tx.common_data {
+        ExecuteTransactionCommon::L1(_) => {
+            vec![format!("{}", format!("Transaction Type: L1").bold().red())]
+        }
+        ExecuteTransactionCommon::L2(data) => {
+            let mut details = vec![
+                format!(
+                    "{} {:?}",
+                    "Transaction Type:".bold().red(),
+                    data.transaction_type
+                ),
+                format!(
+                    "{} {}",
+                    "Nonce:".bold().red(),
+                    data.nonce.to_string().dimmed().red()
+                ),
+                format!(
+                    "{} {}",
+                    "From:".bold().red().to_string(),
+                    data.initiator_address.to_string().dimmed().red()
+                ),
+                format!(
+                    "{} {}",
+                    "To:".bold().red(),
+                    format!("{:?}", tx.execute.contract_address.unwrap_or(to))
+                        .dimmed()
+                        .red()
+                ),
+                format!(
+                    "{} {}",
+                    "Function:".bold().red(),
+                    fn_signature.dimmed().red()
+                ),
+                format!(
+                    "{} {}",
+                    "Gas Used:".bold().red(),
+                    to_human_size(gas_used.into()).dimmed().red()
+                ),
+            ];
+
+            if data.paymaster_params.paymaster != Address::zero() {
+                details.push(format!(
+                    "{} {}",
+                    "Paymaster:".bold().red(),
+                    format!("{:?}", data.paymaster_params.paymaster)
+                        .dimmed()
+                        .red()
+                ));
+                details.push(format!(
+                    "{} {}",
+                    "Paymaster Input Params:".bold().red(),
+                    format!("{:?}", data.paymaster_params.paymaster_input)
+                        .dimmed()
+                        .red()
+                ));
+            }
+
+            details
+        }
+        ExecuteTransactionCommon::ProtocolUpgrade(_) => vec![format!(
+            "{}",
+            format!("Transaction Type: Protocol Upgrade").bold().red()
+        )],
+    }
+}
+
 // Separated from print_events. Consider the same for print_calls.
 fn resolve_topics(topics: &[H256], resolve_hashes: bool) -> Vec<String> {
     let topics = topics.to_owned();
@@ -773,6 +984,15 @@ fn resolve_topics(topics: &[H256], resolve_hashes: bool) -> Vec<String> {
 
         join_all(futures).await
     })
+}
+
+fn get_last_call(call: &Call) -> &Call {
+    if call.calls.is_empty() {
+        call
+    } else {
+        // Recursively fetch the last call from subcalls
+        get_last_call(call.calls.last().unwrap())
+    }
 }
 
 /// Amount of pubdata that given write has cost.
@@ -859,4 +1079,15 @@ pub fn print_transaction_summary(
         format_gwei(l2_gas_price.into())
     );
     tracing::info!("Refunded: {:.10} ETH", refunded_in_eth);
+    match &tx_result.result {
+        ExecutionResult::Success { output } => {
+            let output_bytes = zksync_types::web3::Bytes::from(output.clone());
+            tracing::info!("Output: {}", serde_json::to_string(&output_bytes).unwrap());
+        }
+        // Ignore revert output as it is already logged in the structured log
+        ExecutionResult::Revert { output: _ } => {}
+        ExecutionResult::Halt { reason } => {
+            tracing::info!("Halted: {:?}", reason);
+        }
+    }
 }

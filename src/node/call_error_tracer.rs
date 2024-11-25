@@ -29,36 +29,6 @@ impl<S, H: HistoryMode> DynTracer<S, SimpleMemory<H>> for CallErrorTracer {
     ) {
         if !data.error_flags_accumulated.is_empty() {
             let _ = self.result.set(data.error_flags_accumulated);
-
-            tracing::error!("!! Got error flags: ");
-            if data
-                .error_flags_accumulated
-                .contains(ErrorFlags::INVALID_OPCODE)
-            {
-                tracing::error!("INVALID OPCODE");
-            }
-            if data
-                .error_flags_accumulated
-                .contains(ErrorFlags::NOT_ENOUGH_ERGS)
-            {}
-            if data
-                .error_flags_accumulated
-                .contains(ErrorFlags::PRIVILAGED_ACCESS_NOT_FROM_KERNEL)
-            {
-                tracing::error!("PRIVILEGED ACCESS");
-            }
-            if data
-                .error_flags_accumulated
-                .contains(ErrorFlags::WRITE_IN_STATIC_CONTEXT)
-            {
-                tracing::error!("WRITE IN STATIC");
-            }
-            if data
-                .error_flags_accumulated
-                .contains(ErrorFlags::CALLSTACK_IS_FULL)
-            {
-                tracing::error!("CALLSTACK IS FULL");
-            }
         }
     }
 }

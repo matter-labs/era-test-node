@@ -609,7 +609,24 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
 
         match estimate_gas_result.result {
             ExecutionResult::Revert { output } => {
-                tracing::info!("{}", format!("Unable to estimate gas for the request with our suggested gas limit of {}. The transaction is most likely unexecutable. Breakdown of estimation:", suggested_gas_limit + overhead).red());
+                let mut formatter = formatter::Formatter::new();
+                tracing::error!("{}", "[Transaction Reverted]".red());
+                let num_calls = call_traces.len();
+                for (i, call) in call_traces.iter().enumerate() {
+                    let is_last_sibling = i == num_calls - 1;
+                    formatter.print_structured_error(
+                        tx.initiator_account(),
+                        tx.execute.contract_address,
+                        call,
+                        is_last_sibling,
+                        error_flags,
+                        &result.statistics,
+                        output,
+                        &tx,
+                    );
+                }
+
+                tracing::info!("{}", format!("here1: Unable to estimate gas for the request with our suggested gas limit of {}. The transaction is most likely unexecutable. Breakdown of estimation:", suggested_gas_limit + overhead).red());
                 tracing::info!(
                     "{}",
                     format!(
@@ -625,7 +642,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
                 tracing::info!("{}", format!("\tOverhead: {}", overhead).red());
                 let message = output.to_string();
                 let pretty_message = format!(
-                    "execution reverted{}{}",
+                    "execution reverted3{}{}",
                     if message.is_empty() { "" } else { ": " },
                     message
                 );
@@ -637,7 +654,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
                 )))
             }
             ExecutionResult::Halt { reason } => {
-                tracing::info!("{}", format!("Unable to estimate gas for the request with our suggested gas limit of {}. The transaction is most likely unexecutable. Breakdown of estimation:", suggested_gas_limit + overhead).red());
+                tracing::info!("{}", format!("here2: Unable to estimate gas for the request with our suggested gas limit of {}. The transaction is most likely unexecutable. Breakdown of estimation:", suggested_gas_limit + overhead).red());
                 tracing::info!(
                     "{}",
                     format!(
@@ -653,7 +670,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
                 tracing::info!("{}", format!("\tOverhead: {}", overhead).red());
                 let message = reason.to_string();
                 let pretty_message = format!(
-                    "execution reverted{}{}",
+                    "execution reverted1{}{}",
                     if message.is_empty() { "" } else { ": " },
                     message
                 );
@@ -1113,17 +1130,14 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
 
         // TODO: Properly handle console logs. Consider adding a flag to enable console logs.
         // Maybe related to issue: https://github.com/matter-labs/era-test-node/issues/205
-        tracing::info!("=== ???Console Logs: ");
+        tracing::info!("=== Console Logs: ");
         for call in &call_traces {
             inner.console_log_handler.handle_call_recursive(call);
         }
         tracing::info!("");
 
-        println!("ERROR FLAGS2: {:?}", error_flags);
         let spent_on_pubdata =
             tx_result.statistics.gas_used - tx_result.statistics.computational_gas_used as u64;
-        println!("SPENT ON PUBDATA: {:?}", spent_on_pubdata);
-        println!("tx_result stats: {:?}", tx_result.statistics);
 
         if inner.config.show_gas_details != ShowGasDetails::None {
             self.display_detailed_gas_info(bootloader_debug_result.get(), spent_on_pubdata)
@@ -1131,38 +1145,47 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
                     tracing::error!("{}", format!("Cannot display gas details: {err}").on_red());
                 });
         }
-        // TODO: consider passing error_flags to the formatter
-        // could then provide more human readable error messages
-        tracing::info!(
-            "[Transaction Execution] ({} calls)",
-            call_traces[0].calls.len()
-        );
-        let num_calls = call_traces.len();
-        for (i, call) in call_traces.iter().enumerate() {
-            let is_last_sibling = i == num_calls - 1;
-            let mut formatter = formatter::Formatter::new();
-            formatter.print_call(
-                tx.initiator_account(),
-                tx.execute.contract_address,
-                call,
-                is_last_sibling,
-                &inner.config.show_calls,
-                inner.config.show_outputs,
-                inner.config.resolve_hashes,
+        if inner.config.show_calls != ShowCalls::None {
+            tracing::info!(
+                "[Transaction Execution] ({} calls)",
+                call_traces[0].calls.len()
             );
-        }
-        // TODO:
-        // Update the logs for Failed and Halted
-        // Pass the error_flags, along with call_traces
-        // Extract the error and inform user properly using structered error logs
-        match &tx_result.result {
-            ExecutionResult::Success { output } => {
-                tracing::info!("Call: {}", "SUCCESS".green());
-                let output_bytes = zksync_types::web3::Bytes::from(output.clone());
-                tracing::info!("Output: {}", serde_json::to_string(&output_bytes).unwrap());
+            let num_calls = call_traces.len();
+            for (i, call) in call_traces.iter().enumerate() {
+                let is_last_sibling = i == num_calls - 1;
+                let mut formatter = formatter::Formatter::new();
+                formatter.print_call(
+                    tx.initiator_account(),
+                    tx.execute.contract_address,
+                    call,
+                    is_last_sibling,
+                    &inner.config.show_calls,
+                    inner.config.show_outputs,
+                    inner.config.resolve_hashes,
+                );
             }
+        }
+
+        match &tx_result.result {
+            // Ignore success as the tx summary is logged in raw call
+            ExecutionResult::Success { output: _ } => {}
             ExecutionResult::Revert { output } => {
-                tracing::info!("Call: {}: {}", "FffAILED".red(), output);
+                let mut formatter = formatter::Formatter::new();
+                tracing::error!("{}", "[Transaction Reverted]".red());
+                let num_calls = call_traces.len();
+                for (i, call) in call_traces.iter().enumerate() {
+                    let is_last_sibling = i == num_calls - 1;
+                    formatter.print_structured_error(
+                        tx.initiator_account(),
+                        tx.execute.contract_address,
+                        call,
+                        is_last_sibling,
+                        error_flags,
+                        &tx_result.statistics,
+                        output,
+                        &tx,
+                    );
+                }
             }
             ExecutionResult::Halt { reason } => {
                 tracing::info!("Call: {} {}", "HALTED".red(), reason)
@@ -1286,17 +1309,12 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
 
         let call_traces = call_tracer_result.get().unwrap();
 
-        if let Some(error_flags) = error_flags_result.get() {
-            println!("ERROR FLAGS: {:?}", error_flags);
-            // Handle the error flags as needed
-        };
-
         let spent_on_pubdata =
             tx_result.statistics.gas_used - tx_result.statistics.computational_gas_used as u64;
 
         let status = match &tx_result.result {
             ExecutionResult::Success { .. } => "SUCCESS",
-            ExecutionResult::Revert { .. } => "FAILEssDDD",
+            ExecutionResult::Revert { .. } => "FAILED",
             ExecutionResult::Halt { .. } => "HALTED",
         };
 
@@ -1360,7 +1378,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         // TODO: Properly handle console logs. Consider adding a flag to enable console logs.
         // Maybe related to issue: https://github.com/matter-labs/era-test-node/issues/205
         tracing::info!("");
-        tracing::info!("==== Console logs???: ");
+        tracing::info!("==== Console logs: ");
         for call in call_traces {
             inner.console_log_handler.handle_call_recursive(call);
         }

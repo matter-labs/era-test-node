@@ -55,12 +55,10 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> InMemoryNo
             ExecutionResult::Revert { output } => {
                 let message = output.to_user_friendly_string();
                 let pretty_message = format!(
-                    "execution reverted{}{}",
+                    "execution reverted2{}{}",
                     if message.is_empty() { "" } else { ": " },
                     message
                 );
-
-                tracing::info!("{}", pretty_message.on_red());
                 Err(Web3Error::SubmitTransactionError(
                     pretty_message,
                     output.encoded_data(),

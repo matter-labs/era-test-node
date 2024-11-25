@@ -7,7 +7,7 @@ import { deployContract, expectThrowsAsync, getTestProvider } from "../helpers/u
 const provider = getTestProvider();
 
 describe("Test Fib error flags", function () {
-  it.only("Should print to the console NOT ENOUGH ERGS", async function () {
+  it("Should print to the console NOT ENOUGH ERGS", async function () {
     const action = async () => {
       const wallet = new Wallet(RichAccounts[0].PrivateKey, provider);
 
