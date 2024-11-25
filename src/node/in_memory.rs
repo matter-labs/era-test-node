@@ -11,6 +11,7 @@ use colored::Colorize;
 use indexmap::IndexMap;
 use once_cell::sync::OnceCell;
 use zksync_contracts::BaseSystemContracts;
+use zksync_multivm::zk_evm_latest::vm_state::ErrorFlags;
 use zksync_multivm::{
     interface::{
         storage::{ReadStorage, StoragePtr, WriteStorage},
@@ -522,7 +523,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
 
             // In theory, if the transaction has failed with such large gas limit, we could have returned an API error here right away,
             // but doing it later on keeps the code more lean.
-            let result = InMemoryNodeInner::estimate_gas_step(
+            let (result, _, _, _) = InMemoryNodeInner::estimate_gas_step(
                 l2_tx.clone(),
                 gas_per_pubdata_byte,
                 BATCH_GAS_LIMIT,
@@ -559,7 +560,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
             );
             let try_gas_limit = additional_gas_for_pubdata + mid;
 
-            let estimate_gas_result = InMemoryNodeInner::estimate_gas_step(
+            let (estimate_gas_result, _, _, _) = InMemoryNodeInner::estimate_gas_step(
                 l2_tx.clone(),
                 gas_per_pubdata_byte,
                 try_gas_limit,
@@ -590,14 +591,15 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
             * self.fee_input_provider.estimate_gas_scale_factor)
             as u64;
 
-        let estimate_gas_result = InMemoryNodeInner::estimate_gas_step(
-            l2_tx.clone(),
-            gas_per_pubdata_byte,
-            suggested_gas_limit,
-            batch_env,
-            system_env,
-            &self.fork_storage,
-        );
+        let (estimate_gas_result, call_traces, error_flags, _) =
+            InMemoryNodeInner::estimate_gas_step(
+                l2_tx.clone(),
+                gas_per_pubdata_byte,
+                suggested_gas_limit,
+                batch_env,
+                system_env,
+                &self.fork_storage,
+            );
 
         let overhead = derive_overhead(
             suggested_gas_limit,
@@ -620,64 +622,59 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
                         call,
                         is_last_sibling,
                         error_flags,
-                        &result.statistics,
-                        output,
+                        &estimate_gas_result.statistics,
+                        &formatter::ExecutionOutput::RevertReason(output.clone()),
                         &tx,
                     );
                 }
 
-                tracing::info!("{}", format!("here1: Unable to estimate gas for the request with our suggested gas limit of {}. The transaction is most likely unexecutable. Breakdown of estimation:", suggested_gas_limit + overhead).red());
-                tracing::info!(
-                    "{}",
-                    format!(
-                        "\tEstimated transaction body gas cost: {}",
-                        tx_body_gas_limit
-                    )
-                    .red()
-                );
-                tracing::info!(
-                    "{}",
-                    format!("\tGas for pubdata: {}", additional_gas_for_pubdata).red()
-                );
-                tracing::info!("{}", format!("\tOverhead: {}", overhead).red());
-                let message = output.to_string();
-                let pretty_message = format!(
-                    "execution reverted3{}{}",
-                    if message.is_empty() { "" } else { ": " },
-                    message
-                );
+                // tracing::info!("{}", format!("here1: Unable to estimate gas for the request with our suggested gas limit of {}. The transaction is most likely unexecutable. Breakdown of estimation:", suggested_gas_limit + overhead).red());
+                // tracing::info!(
+                //     "{}",
+                //     format!(
+                //         "\tEstimated transaction body gas cost: {}",
+                //         tx_body_gas_limit
+                //     )
+                //     .red()
+                // );
+                // tracing::info!(
+                //     "{}",
+                //     format!("\tGas for pubdata: {}", additional_gas_for_pubdata).red()
+                // );
+                // tracing::info!("{}", format!("\tOverhead: {}", overhead).red());
+                // let message = output.to_string();
+                // let pretty_message = format!(
+                //     "execution reverted3{}{}",
+                //     if message.is_empty() { "" } else { ": " },
+                //     message
+                // );
+
                 let data = output.encoded_data();
-                tracing::info!("{}", pretty_message.on_red());
+                //tracing::info!("{}", pretty_message.on_red());
                 Err(into_jsrpc_error(Web3Error::SubmitTransactionError(
-                    pretty_message,
+                    output.to_string(),
                     data,
                 )))
             }
             ExecutionResult::Halt { reason } => {
-                tracing::info!("{}", format!("here2: Unable to estimate gas for the request with our suggested gas limit of {}. The transaction is most likely unexecutable. Breakdown of estimation:", suggested_gas_limit + overhead).red());
-                tracing::info!(
-                    "{}",
-                    format!(
-                        "\tEstimated transaction body gas cost: {}",
-                        tx_body_gas_limit
-                    )
-                    .red()
-                );
-                tracing::info!(
-                    "{}",
-                    format!("\tGas for pubdata: {}", additional_gas_for_pubdata).red()
-                );
-                tracing::info!("{}", format!("\tOverhead: {}", overhead).red());
-                let message = reason.to_string();
-                let pretty_message = format!(
-                    "execution reverted1{}{}",
-                    if message.is_empty() { "" } else { ": " },
-                    message
-                );
-
-                tracing::info!("{}", pretty_message.on_red());
+                let mut formatter = formatter::Formatter::new();
+                tracing::error!("{}", "[Transaction Reverted]".red());
+                let num_calls = call_traces.len();
+                for (i, call) in call_traces.iter().enumerate() {
+                    let is_last_sibling = i == num_calls - 1;
+                    formatter.print_structured_error(
+                        tx.initiator_account(),
+                        tx.execute.contract_address,
+                        call,
+                        is_last_sibling,
+                        error_flags,
+                        &estimate_gas_result.statistics,
+                        &formatter::ExecutionOutput::HaltReason(reason.clone()),
+                        &tx,
+                    );
+                }
                 Err(into_jsrpc_error(Web3Error::SubmitTransactionError(
-                    pretty_message,
+                    reason.to_string(),
                     vec![],
                 )))
             }
@@ -734,7 +731,12 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
         batch_env: L1BatchEnv,
         system_env: SystemEnv,
         fork_storage: &ForkStorage<S>,
-    ) -> VmExecutionResultAndLogs {
+    ) -> (
+        VmExecutionResultAndLogs,
+        Vec<Call>,
+        ErrorFlags,
+        BootloaderDebug,
+    ) {
         let tx: Transaction = l2_tx.clone().into();
 
         // Set gas_limit for transaction
@@ -775,7 +777,38 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
         let tx: Transaction = l2_tx.into();
         vm.push_transaction(tx);
 
-        vm.execute(InspectExecutionMode::OneTx)
+        let call_tracer_result = Arc::new(OnceCell::default());
+        let error_flags_result = Arc::new(OnceCell::new());
+        let bootloader_debug_result = Arc::new(OnceCell::default());
+
+        let tracers = vec![
+            CallErrorTracer::new(error_flags_result.clone()).into_tracer_pointer(),
+            CallTracer::new(call_tracer_result.clone()).into_tracer_pointer(),
+            BootloaderDebugTracer {
+                result: bootloader_debug_result.clone(),
+            }
+            .into_tracer_pointer(),
+        ];
+        // Ask if vm.inspect is the same as vm.execute
+        let tx_result = vm.inspect(&mut tracers.into(), InspectExecutionMode::OneTx);
+
+        let call_traces = Arc::try_unwrap(call_tracer_result)
+            .unwrap()
+            .take()
+            .unwrap_or_default();
+
+        let error_flags = Arc::try_unwrap(error_flags_result)
+            .unwrap()
+            .take()
+            .unwrap_or_default();
+
+        let bootloader_debug = Arc::try_unwrap(bootloader_debug_result)
+            .unwrap()
+            .take()
+            .unwrap()
+            .unwrap();
+
+        (tx_result, call_traces, error_flags, bootloader_debug)
     }
 
     /// Archives the current state for later queries.
@@ -1061,7 +1094,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
             .read()
             .map_err(|_| anyhow::anyhow!("Failed to acquire read lock"))?;
         Ok(if inner.impersonation.is_impersonating(&tx_initiator) {
-            tracing::info!("🕵️ Executing tx from impersonated account {tx_initiator:?}");
+            tracing::info!("🕵️  Executing tx from impersonated account {tx_initiator:?}");
             inner
                 .system_contracts
                 .contracts(TxExecutionMode::VerifyExecute, true)
@@ -1128,9 +1161,6 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
             .take()
             .unwrap_or_default();
 
-        // TODO: Properly handle console logs. Consider adding a flag to enable console logs.
-        // Maybe related to issue: https://github.com/matter-labs/era-test-node/issues/205
-        tracing::info!("=== Console Logs: ");
         for call in &call_traces {
             inner.console_log_handler.handle_call_recursive(call);
         }
@@ -1182,7 +1212,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
                         is_last_sibling,
                         error_flags,
                         &tx_result.statistics,
-                        output,
+                        &formatter::ExecutionOutput::RevertReason(output.clone()),
                         &tx,
                     );
                 }
@@ -1375,10 +1405,6 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         }
         tracing::info!("");
 
-        // TODO: Properly handle console logs. Consider adding a flag to enable console logs.
-        // Maybe related to issue: https://github.com/matter-labs/era-test-node/issues/205
-        tracing::info!("");
-        tracing::info!("==== Console logs: ");
         for call in call_traces {
             inner.console_log_handler.handle_call_recursive(call);
         }

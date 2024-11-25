@@ -1,11 +1,12 @@
 use std::{collections::HashMap, str::FromStr};
 
-use colored::Colorize;
 use ethabi::param_type::Reader;
 use ethabi::{Function, Param, StateMutability};
 use itertools::Itertools;
 use zksync_multivm::interface::Call;
 use zksync_types::H160;
+
+use crate::formatter;
 
 /// ConsoleLogHandler is responsible for printing the logs, that are created when contract calls 'console.log' method.
 /// This is a popular debugging method used by hardhat and foundry.
@@ -36,30 +37,35 @@ impl Default for ConsoleLogHandler {
 
 impl ConsoleLogHandler {
     pub fn handle_call_recursive(&self, current_call: &Call) {
-        self.handle_call(current_call);
-        for call in &current_call.calls {
-            self.handle_call_recursive(call);
+        let mut messages = Vec::new();
+        self.collect_logs_recursive(current_call, &mut messages);
+
+        if !messages.is_empty() {
+            let mut formatter = formatter::Formatter::new();
+            formatter.section("Console Logs", true, |section| {
+                section.multi_log(&messages);
+            });
         }
     }
-    pub fn handle_call(&self, current_call: &Call) {
-        if current_call.to != self.target_contract {
-            return;
+    /// Collects logs recursively from the call tree.
+    fn collect_logs_recursive(&self, current_call: &Call, messages: &mut Vec<String>) {
+        if current_call.to == self.target_contract && current_call.input.len() >= 4 {
+            let signature = &current_call.input[..4];
+            let message =
+                self.signature_map
+                    .get(signature)
+                    .map_or("Unknown log call.".to_owned(), |func| {
+                        let tokens = func.decode_input(&current_call.input.as_slice()[4..]);
+                        tokens.map_or("Failed to parse inputs for log.".to_owned(), |tokens| {
+                            tokens.iter().map(|t| format!("{}", t)).join(" ")
+                        })
+                    });
+            messages.push(message);
         }
-        if current_call.input.len() < 4 {
-            return;
-        }
-        let signature = &current_call.input[..4];
-        let message =
-            self.signature_map
-                .get(signature)
-                .map_or("Unknown log call.".to_owned(), |func| {
-                    let tokens = func.decode_input(&current_call.input.as_slice()[4..]);
 
-                    tokens.map_or("Failed to parse inputs for log.".to_owned(), |tokens| {
-                        tokens.iter().map(|t| format!("{}", t)).join(" ")
-                    })
-                });
-        tracing::info!("{}", message.cyan());
+        for call in &current_call.calls {
+            self.collect_logs_recursive(call, messages);
+        }
     }
 }
 

@@ -10,7 +10,8 @@ use lazy_static::lazy_static;
 use serde::Deserialize;
 use std::{collections::HashMap, str};
 use zksync_multivm::interface::{
-    Call, ExecutionResult, VmEvent, VmExecutionResultAndLogs, VmExecutionStatistics, VmRevertReason,
+    Call, ExecutionResult, Halt, VmEvent, VmExecutionResultAndLogs, VmExecutionStatistics,
+    VmRevertReason,
 };
 use zksync_multivm::zk_evm_latest::vm_state::ErrorFlags;
 use zksync_types::ExecuteTransactionCommon;
@@ -18,6 +19,12 @@ use zksync_types::{
     fee_model::FeeModelConfigV2, Address, StorageLogWithPreviousValue, Transaction, H160, H256,
     U256,
 };
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ExecutionOutput {
+    RevertReason(VmRevertReason),
+    HaltReason(Halt),
+}
 // @dev elected to have GasDetails struct as we can do more with it in the future
 // We can provide more detailed understanding of gas errors and gas usage
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
@@ -118,6 +125,14 @@ impl Formatter {
         f(self);
         self.exit_scope();
     }
+    /// Logs multiple sibling messages under the same section.
+    pub fn multi_log(&mut self, messages: &[String]) {
+        let num_messages = messages.len();
+        for (i, message) in messages.iter().enumerate() {
+            let is_last_message = i == num_messages - 1;
+            self.format_log(is_last_message, message);
+        }
+    }
     /// Logs a key-value item as part of the formatted output.
     pub fn item(&mut self, is_last_sibling: bool, key: &str, value: &str) {
         self.format_log(
@@ -154,7 +169,7 @@ impl Formatter {
         is_last_sibling: bool,
         error_flag: ErrorFlags,
         tx_result: &VmExecutionStatistics,
-        output: &VmRevertReason,
+        output: &ExecutionOutput,
         tx: &Transaction,
     ) {
         let contract_type = KNOWN_ADDRESSES
@@ -208,6 +223,27 @@ impl Formatter {
             if call.revert_reason.is_some() || call.error.is_some() {
                 if let Some(ref reason) = call.revert_reason {
                     call_section.format_error(true, &format!("🔴 Revert reason: {}", reason));
+                    call_section.format_error(true, &format!("🔴 Error output: {:?}", output));
+                    call_section.format_error(true, &format!("🔴 Error flag: {:?}", error_flag));
+                    if let Some(insight) = format_error_insight(&error_flag, tx_result) {
+                        call_section.format_error(true, &format!("🟡 Insight: {}", insight));
+                    }
+                    // Print failed transaction details
+                    let last_call = get_last_call(call);
+                    call_section.section(
+                        "🔴 Failed Transaction Summary",
+                        true,
+                        |summary_section| {
+                            for detail in format_transaction_error_summary(
+                                tx,
+                                last_call.gas_used,
+                                last_call.to,
+                                function_signature.clone(),
+                            ) {
+                                summary_section.format_log(true, &detail);
+                            }
+                        },
+                    );
                 }
                 if let Some(ref error) = call.error {
                     call_section.format_error(true, &format!("🔴 Error: {}", error));
@@ -817,7 +853,7 @@ fn address_to_human_readable(address: H160) -> Option<String> {
     format_known_address(address)
 }
 
-fn format_address_human_readable(
+pub fn format_address_human_readable(
     address: H160,
     initiator: H160,
     contract_address: Option<H160>,
@@ -919,8 +955,8 @@ fn format_transaction_error_summary(
                 ),
                 format!(
                     "{} {}",
-                    "From:".bold().red().to_string(),
-                    data.initiator_address.to_string().dimmed().red()
+                    "From:".bold().red(),
+                    format!("0x{:x}", data.initiator_address).dimmed().red()
                 ),
                 format!(
                     "{} {}",

@@ -304,7 +304,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> InMemoryNo
 
     pub fn impersonate_account(&self, address: Address) -> Result<bool> {
         if self.impersonation.impersonate(address) {
-            tracing::info!("🕵️ Account {:?} has been impersonated", address);
+            tracing::info!("🕵️  Account {:?} has been impersonated", address);
             Ok(true)
         } else {
             tracing::info!("🕵️ Account {:?} was already impersonated", address);
@@ -331,7 +331,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> InMemoryNo
             .map_err(|err| anyhow!("failed acquiring lock: {:?}", err))
             .and_then(|mut writer| {
                 let code_key = get_code_key(&address);
-                tracing::info!("set code for address {address:#x}");
+                tracing::info!("Setting bytecode for address: {address:#x} with provided code.");
                 let code_slice = code
                     .strip_prefix("0x")
                     .ok_or_else(|| anyhow!("code must be 0x-prefixed"))?;
