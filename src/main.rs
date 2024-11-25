@@ -132,7 +132,13 @@ async fn main() -> Result<(), SerializedError> {
     let mut config = opt.into_test_node_config().map_err(generic_error)?;
 
     let log_level_filter = LevelFilter::from(config.log_level);
-    let log_file = File::create(&config.log_file_path).map_err(generic_error)?;
+    let log_file = File::create(&config.log_file_path).map_err(|e| {
+        serialize(pack(TestNode::LogFileCreationError {
+            path: config.log_file_path.to_string(),
+            inner: e.to_string(),
+        }))
+        .unwrap()
+    })?;
 
     // Initialize the tracing subscriber
     let observability =

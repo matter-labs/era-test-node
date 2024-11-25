@@ -12,6 +12,21 @@
                     "type": "WrappedErrorMessage"
                 }
             ]
+        },
+        {
+            "name": "LogFileCreationError",
+            "code": 2,
+            "message": "Unable to create log file {path}: {inner}",
+            "fields": [
+                {
+                    "name": "path",
+                    "type": "string"
+                },
+                {
+                    "name": "inner",
+                    "type": "WrappedErrorMessage"
+                }
+            ]
         }
     ]
 }
