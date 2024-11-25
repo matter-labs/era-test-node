@@ -1,0 +1,17 @@
+{
+    "component_name": "TestNode",
+    "component_code": 2,
+    "errors": [
+        {
+            "name": "TestNodeError",
+            "code": 1,
+            "message": "Some error in EraTestNode happened: {inner}.",
+            "fields": [
+                {
+                    "name": "inner",
+                    "type": "WrappedErrorMessage"
+                }
+            ]
+        }
+    ]
+}
