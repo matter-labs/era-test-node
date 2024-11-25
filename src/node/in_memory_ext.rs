@@ -1,4 +1,5 @@
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
+use std::convert::TryInto;
 use zksync_types::{
     get_code_key, get_nonce_key,
     utils::{nonces_to_full_nonce, storage_key_for_eth_balance},
@@ -7,6 +8,7 @@ use zksync_types::{
 use zksync_types::{AccountTreeId, Address, U256, U64};
 use zksync_utils::u256_to_h256;
 
+use crate::utils::Numeric;
 use crate::{
     fork::{ForkDetails, ForkSource},
     namespaces::ResetRequest,
@@ -28,7 +30,10 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> InMemoryNo
     ///
     /// # Returns
     /// The applied time delta to `current_timestamp` value for the InMemoryNodeInner.
-    pub fn increase_time(&self, time_delta_seconds: u64) -> Result<u64> {
+    pub fn increase_time(&self, time_delta_seconds: Numeric) -> Result<u64> {
+        let time_delta_seconds = time_delta_seconds
+            .try_into()
+            .context("The time delta is too big")?;
         self.time.increase_time(time_delta_seconds);
         Ok(time_delta_seconds)
     }
@@ -40,9 +45,9 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> InMemoryNo
     ///
     /// # Returns
     /// The new timestamp value for the InMemoryNodeInner.
-    pub fn set_next_block_timestamp(&self, timestamp: U64) -> Result<U64> {
-        self.time.advance_timestamp(timestamp.as_u64() - 1)?;
-        Ok(timestamp)
+    pub fn set_next_block_timestamp(&self, timestamp: Numeric) -> Result<()> {
+        let timestamp: u64 = timestamp.try_into().context("The timestamp is too big")?;
+        self.time.advance_timestamp(timestamp - 1)
     }
 
     /// Set the current timestamp for the node.
@@ -54,8 +59,10 @@ impl<S: ForkSource + std::fmt::Debug + Clone + Send + Sync + 'static> InMemoryNo
     ///
     /// # Returns
     /// The difference between the `current_timestamp` and the new timestamp for the InMemoryNodeInner.
-    pub fn set_time(&self, time: u64) -> Result<i128> {
-        Ok(self.time.set_last_timestamp_unchecked(time))
+    pub fn set_time(&self, timestamp: Numeric) -> Result<i128> {
+        Ok(self.time.set_last_timestamp_unchecked(
+            timestamp.try_into().context("The timestamp is too big")?,
+        ))
     }
 
     /// Force a single block to be mined.
@@ -648,7 +655,7 @@ mod tests {
         let expected_response = increase_value_seconds;
 
         let actual_response = node
-            .increase_time(increase_value_seconds)
+            .increase_time(increase_value_seconds.into())
             .expect("failed increasing timestamp");
         let timestamp_after = node
             .get_inner()
@@ -678,7 +685,7 @@ mod tests {
         let expected_response = increase_value_seconds;
 
         let actual_response = node
-            .increase_time(increase_value_seconds)
+            .increase_time(increase_value_seconds.into())
             .expect("failed increasing timestamp");
         let timestamp_after = node
             .get_inner()
@@ -707,7 +714,7 @@ mod tests {
         let expected_response = increase_value_seconds;
 
         let actual_response = node
-            .increase_time(increase_value_seconds)
+            .increase_time(increase_value_seconds.into())
             .expect("failed increasing timestamp");
         let timestamp_after = node
             .get_inner()
@@ -737,10 +744,8 @@ mod tests {
             timestamp_before, new_timestamp,
             "timestamps must be different"
         );
-        let expected_response = new_timestamp;
 
-        let actual_response = node
-            .set_next_block_timestamp(new_timestamp.into())
+        node.set_next_block_timestamp(new_timestamp.into())
             .expect("failed setting timestamp");
         let timestamp_after = node
             .get_inner()
@@ -748,11 +753,6 @@ mod tests {
             .map(|inner| inner.time.last_timestamp())
             .expect("failed reading timestamp");
 
-        assert_eq!(
-            expected_response,
-            actual_response.as_u64(),
-            "erroneous response"
-        );
         assert_eq!(
             new_timestamp,
             timestamp_after + 1,
@@ -818,7 +818,9 @@ mod tests {
         assert_ne!(timestamp_before, new_time, "timestamps must be different");
         let expected_response = 9000;
 
-        let actual_response = node.set_time(new_time).expect("failed setting timestamp");
+        let actual_response = node
+            .set_time(new_time.into())
+            .expect("failed setting timestamp");
         let timestamp_after = node
             .get_inner()
             .read()
@@ -842,7 +844,9 @@ mod tests {
         assert_ne!(timestamp_before, new_time, "timestamps must be different");
         let expected_response = -990;
 
-        let actual_response = node.set_time(new_time).expect("failed setting timestamp");
+        let actual_response = node
+            .set_time(new_time.into())
+            .expect("failed setting timestamp");
         let timestamp_after = node
             .get_inner()
             .read()
@@ -866,7 +870,9 @@ mod tests {
         assert_eq!(timestamp_before, new_time, "timestamps must be same");
         let expected_response = 0;
 
-        let actual_response = node.set_time(new_time).expect("failed setting timestamp");
+        let actual_response = node
+            .set_time(new_time.into())
+            .expect("failed setting timestamp");
         let timestamp_after = node
             .get_inner()
             .read()
@@ -896,7 +902,9 @@ mod tests {
             );
             let expected_response = (new_time as i128).saturating_sub(timestamp_before as i128);
 
-            let actual_response = node.set_time(new_time).expect("failed setting timestamp");
+            let actual_response = node
+                .set_time(new_time.into())
+                .expect("failed setting timestamp");
             let timestamp_after = node
                 .get_inner()
                 .read()
