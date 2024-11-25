@@ -56,8 +56,6 @@ use crate::namespaces::{
 };
 
 use zksync_error::error::definitions::TestNode;
-use zksync_error::packed::pack;
-use zksync_error::serialized::serialize;
 use zksync_error::serialized::SerializedError;
 
 #[allow(clippy::too_many_arguments)]
@@ -113,14 +111,13 @@ async fn build_json_http<
 
 #[tokio::main]
 async fn main() -> Result<(), SerializedError> {
-    fn generic_error<T: std::fmt::Display>(e: T) -> SerializedError {
-        serialize(pack(TestNode::TestNodeError {
+    fn generic_error<T: std::fmt::Display>(e: T) -> TestNode {
+        TestNode::TestNodeError {
             inner: e.to_string(),
-        }))
-        .unwrap()
+        }.into()
     }
-    fn generic_error_msg(msg: impl Into<String>) -> SerializedError {
-        serialize(pack(TestNode::TestNodeError { inner: msg.into() })).unwrap()
+    fn generic_error_msg(msg: impl Into<String>) -> TestNode {
+        TestNode::TestNodeError { inner: msg.into() }.into()
     }
 
     // Check for deprecated options
@@ -133,11 +130,10 @@ async fn main() -> Result<(), SerializedError> {
 
     let log_level_filter = LevelFilter::from(config.log_level);
     let log_file = File::create(&config.log_file_path).map_err(|e| {
-        serialize(pack(TestNode::LogFileCreationError {
+        TestNode::LogFileCreationError {
             path: config.log_file_path.to_string(),
             inner: e.to_string(),
-        }))
-        .unwrap()
+        }
     })?;
 
     // Initialize the tracing subscriber
