@@ -6,6 +6,15 @@ use crate::utils::Numeric;
 
 #[rpc]
 pub trait AnvilNamespaceT {
+    /// Set the minimum gas price for the node. Unsupported for ZKsync as it is only relevant for
+    /// pre-EIP1559 chains.
+    ///
+    /// # Arguments
+    ///
+    /// * `gas` - The minimum gas price to be set
+    #[rpc(name = "anvil_setMinGasPrice")]
+    fn set_min_gas_price(&self, gas: U256) -> RpcResult<()>;
+
     /// Enable or disable logging.
     ///
     /// # Arguments
