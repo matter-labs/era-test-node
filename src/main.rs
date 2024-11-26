@@ -154,54 +154,30 @@ async fn main() -> anyhow::Result<()> {
             }
         }
         Command::Fork(fork) => {
-            match ForkDetails::from_network(
-                &fork.network,
-                fork.fork_block_number,
-                &config.cache_config,
-            )
-            .await
-            {
-                Ok(fd) => {
-                    // Update the config here
-                    config = config
-                        .with_l1_gas_price(Some(fd.l1_gas_price))
-                        .with_l2_gas_price(Some(fd.l2_fair_gas_price))
-                        .with_l1_pubdata_price(Some(fd.fair_pubdata_price))
-                        .with_price_scale(Some(fd.estimate_gas_price_scale_factor))
-                        .with_gas_limit_scale(Some(fd.estimate_gas_scale_factor))
-                        .with_chain_id(Some(fd.chain_id.as_u64() as u32));
-                    Some(fd)
-                }
-                Err(error) => {
-                    tracing::error!("cannot fork: {:?}", error);
-                    return Err(anyhow!(error));
-                }
-            }
+            let fork_details_result = if let Some(tx_hash) = fork.fork_transaction_hash {
+                // If fork_transaction_hash is provided, use from_network_tx
+                ForkDetails::from_network_tx(&fork.fork_url, tx_hash, &config.cache_config).await
+            } else {
+                // Otherwise, use from_network
+                ForkDetails::from_network(
+                    &fork.fork_url,
+                    fork.fork_block_number,
+                    &config.cache_config,
+                )
+                .await
+            };
+
+            config.update_with_fork_details(fork_details_result).await?
         }
         Command::ReplayTx(replay_tx) => {
-            match ForkDetails::from_network_tx(
-                &replay_tx.network,
+            let fork_details_result = ForkDetails::from_network_tx(
+                &replay_tx.fork_url,
                 replay_tx.tx,
                 &config.cache_config,
             )
-            .await
-            {
-                Ok(fd) => {
-                    // Update the config here
-                    config = config
-                        .with_l1_gas_price(Some(fd.l1_gas_price))
-                        .with_l2_gas_price(Some(fd.l2_fair_gas_price))
-                        .with_l1_pubdata_price(Some(fd.fair_pubdata_price))
-                        .with_price_scale(Some(fd.estimate_gas_price_scale_factor))
-                        .with_gas_limit_scale(Some(fd.estimate_gas_scale_factor))
-                        .with_chain_id(Some(fd.chain_id.as_u64() as u32));
-                    Some(fd)
-                }
-                Err(error) => {
-                    tracing::error!("cannot replay: {:?}", error);
-                    return Err(anyhow!(error));
-                }
-            }
+            .await;
+
+            config.update_with_fork_details(fork_details_result).await?
         }
     };
 
