@@ -48,6 +48,7 @@ use zksync_web3_decl::error::Web3Error;
 
 use crate::node::impersonate::{ImpersonationManager, ImpersonationState};
 use crate::node::time::TimestampManager;
+use crate::node::TxPool;
 use crate::{
     bootloader_debug::{BootloaderDebug, BootloaderDebugTracer},
     config::{
@@ -236,8 +237,17 @@ pub struct TxExecutionOutput {
 
 impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
     /// Create the state to be used implementing [InMemoryNode].
-    pub fn new(fork: Option<ForkDetails>, config: &TestNodeConfig) -> Self {
+    pub fn new(
+        fork: Option<ForkDetails>,
+        config: &TestNodeConfig,
+        time: TimestampManager,
+        impersonation: ImpersonationManager,
+    ) -> Self {
         let updated_config = config.clone();
+        if config.enable_auto_impersonate {
+            // Enable auto impersonation if configured
+            impersonation.set_auto_impersonation(true);
+        }
 
         if let Some(f) = &fork {
             let mut block_hashes = HashMap::<u64, H256>::new();
@@ -257,14 +267,10 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
                     f.estimate_gas_scale_factor,
                 )
             };
-            let impersonation_manager = ImpersonationManager::default();
-            if config.enable_auto_impersonate {
-                // Enable auto impersonation if configured
-                impersonation_manager.set_auto_impersonation(true);
-            }
+            time.set_last_timestamp_unchecked(f.block_timestamp);
 
             InMemoryNodeInner {
-                time: TimestampManager::new(f.block_timestamp),
+                time,
                 current_batch: f.l1_block.0,
                 current_miniblock: f.l2_miniblock,
                 current_miniblock_hash: f.l2_miniblock_hash,
@@ -285,7 +291,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
                     &updated_config.system_contracts_options,
                     updated_config.use_evm_emulator,
                 ),
-                impersonation: impersonation_manager,
+                impersonation,
                 rich_accounts: HashSet::new(),
                 previous_states: Default::default(),
             }
@@ -296,15 +302,10 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
             let mut blocks = HashMap::<H256, Block<TransactionVariant>>::new();
             blocks.insert(block_hash, create_genesis(NON_FORK_FIRST_BLOCK_TIMESTAMP));
             let fee_input_provider = TestNodeFeeInputProvider::default();
-
-            let impersonation_manager = ImpersonationManager::default();
-            if config.enable_auto_impersonate {
-                // Enable auto impersonation if configured
-                impersonation_manager.set_auto_impersonation(true);
-            }
+            time.set_last_timestamp_unchecked(NON_FORK_FIRST_BLOCK_TIMESTAMP);
 
             InMemoryNodeInner {
-                time: TimestampManager::new(NON_FORK_FIRST_BLOCK_TIMESTAMP),
+                time,
                 current_batch: 0,
                 current_miniblock: 0,
                 current_miniblock_hash: block_hash,
@@ -325,7 +326,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
                     &config.system_contracts_options,
                     config.use_evm_emulator,
                 ),
-                impersonation: impersonation_manager,
+                impersonation,
                 rich_accounts: HashSet::new(),
                 previous_states: Default::default(),
             }
@@ -885,6 +886,7 @@ pub struct InMemoryNode<S: Clone> {
     pub(crate) impersonation: ImpersonationManager,
     /// An optional handle to the observability stack
     pub(crate) observability: Option<Observability>,
+    pub(crate) pool: TxPool,
 }
 
 fn contract_address_from_tx_result(execution_result: &VmExecutionResultAndLogs) -> Option<H160> {
@@ -898,7 +900,15 @@ fn contract_address_from_tx_result(execution_result: &VmExecutionResultAndLogs) 
 
 impl<S: ForkSource + std::fmt::Debug + Clone> Default for InMemoryNode<S> {
     fn default() -> Self {
-        InMemoryNode::new(None, None, &TestNodeConfig::default())
+        let impersonation = ImpersonationManager::default();
+        InMemoryNode::new(
+            None,
+            None,
+            &TestNodeConfig::default(),
+            TimestampManager::default(),
+            impersonation.clone(),
+            TxPool::new(impersonation),
+        )
     }
 }
 
@@ -907,11 +917,12 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         fork: Option<ForkDetails>,
         observability: Option<Observability>,
         config: &TestNodeConfig,
+        time: TimestampManager,
+        impersonation: ImpersonationManager,
+        pool: TxPool,
     ) -> Self {
         let system_contracts_options = config.system_contracts_options;
-        let inner = InMemoryNodeInner::new(fork, config);
-        let time = inner.time.clone();
-        let impersonation = inner.impersonation.clone();
+        let inner = InMemoryNodeInner::new(fork, config, time.clone(), impersonation.clone());
         InMemoryNode {
             inner: Arc::new(RwLock::new(inner)),
             snapshots: Default::default(),
@@ -919,7 +930,22 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
             time,
             impersonation,
             observability,
+            pool,
         }
+    }
+
+    // Common pattern in tests
+    // TODO: Refactor InMemoryNode with a builder pattern
+    pub fn default_fork(fork: Option<ForkDetails>) -> Self {
+        let impersonation = ImpersonationManager::default();
+        Self::new(
+            fork,
+            None,
+            &Default::default(),
+            TimestampManager::default(),
+            impersonation.clone(),
+            TxPool::new(impersonation),
+        )
     }
 
     pub fn get_inner(&self) -> Arc<RwLock<InMemoryNodeInner<S>>> {
@@ -953,7 +979,12 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
 
     pub fn reset(&self, fork: Option<ForkDetails>) -> Result<(), String> {
         let config = self.get_config()?;
-        let inner = InMemoryNodeInner::new(fork, &config);
+        let inner = InMemoryNodeInner::new(
+            fork,
+            &config,
+            TimestampManager::default(),
+            ImpersonationManager::default(),
+        );
 
         let mut writer = self
             .snapshots
@@ -1997,6 +2028,7 @@ mod tests {
         let mock_db = testing::ExternalStorage {
             raw_storage: external_storage.inner.read().unwrap().raw_storage.clone(),
         };
+        let impersonation = ImpersonationManager::default();
         let node: InMemoryNode<testing::ExternalStorage> = InMemoryNode::new(
             Some(ForkDetails {
                 fork_source: Box::new(mock_db),
@@ -2017,6 +2049,9 @@ mod tests {
             }),
             None,
             &Default::default(),
+            TimestampManager::default(),
+            impersonation.clone(),
+            TxPool::new(impersonation),
         );
 
         let tx = testing::TransactionBuilder::new().build();
@@ -2030,6 +2065,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_transact_returns_data_in_built_in_without_security_mode() {
+        let impersonation = ImpersonationManager::default();
         let node = InMemoryNode::<HttpForkSource>::new(
             None,
             None,
@@ -2037,6 +2073,9 @@ mod tests {
                 system_contracts_options: Options::BuiltInWithoutSecurity,
                 ..Default::default()
             },
+            TimestampManager::default(),
+            impersonation.clone(),
+            TxPool::new(impersonation),
         );
 
         let private_key = K256PrivateKey::from_bytes(H256::repeat_byte(0xef)).unwrap();

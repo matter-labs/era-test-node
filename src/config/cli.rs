@@ -1,4 +1,5 @@
 use std::env;
+use std::time::Duration;
 
 use clap::{arg, command, Parser, Subcommand};
 use rand::{rngs::StdRng, SeedableRng};
@@ -202,6 +203,11 @@ pub struct Cli {
         help_heading = "Account Configuration"
     )]
     pub auto_impersonate: bool,
+
+    /// Block time in seconds for interval sealing.
+    /// If unset, node seals a new block as soon as there is at least one transaction.
+    #[arg(short, long, value_name = "SECONDS", value_parser = duration_from_secs_f64, help_heading = "Block Sealing")]
+    pub block_time: Option<Duration>,
 }
 
 #[derive(Debug, Subcommand, Clone)]
@@ -340,7 +346,8 @@ impl Cli {
                 Some(true)
             } else {
                 None
-            });
+            })
+            .with_block_time(self.block_time);
 
         if self.emulate_evm && self.dev_system_contracts != Some(SystemContractsOptions::Local) {
             return Err(eyre::eyre!(
@@ -381,6 +388,14 @@ impl Cli {
         }
         gen
     }
+}
+
+fn duration_from_secs_f64(s: &str) -> Result<Duration, String> {
+    let s = s.parse::<f64>().map_err(|e| e.to_string())?;
+    if s == 0.0 {
+        return Err("Duration must be greater than 0".to_string());
+    }
+    Duration::try_from_secs_f64(s).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

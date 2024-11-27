@@ -21,6 +21,7 @@ use serde::Deserialize;
 use serde_json::{json, to_writer, Value};
 use std::collections::HashMap;
 use std::fs::File;
+use std::time::Duration;
 use zksync_types::fee_model::FeeModelConfigV2;
 use zksync_types::U256;
 
@@ -32,12 +33,12 @@ pub mod show_details;
 pub const VERSION_MESSAGE: &str = concat!(env!("CARGO_PKG_VERSION"));
 
 const BANNER: &str = r#"
-                      _  _         _____ _  __                         
-  __ _  _ __  __   __(_)| |       |__  /| |/ / ___  _   _  _ __    ___ 
+                      _  _         _____ _  __
+  __ _  _ __  __   __(_)| |       |__  /| |/ / ___  _   _  _ __    ___
  / _` || '_ \ \ \ / /| || | _____   / / | ' / / __|| | | || '_ \  / __|
-| (_| || | | | \ V / | || ||_____| / /_ | . \ \__ \| |_| || | | || (__ 
+| (_| || | | | \ V / | || ||_____| / /_ | . \ \__ \| |_| || | | || (__
  \__,_||_| |_|  \_/  |_||_|       /____||_|\_\|___/ \__, ||_| |_| \___|
-                                                    |___/              
+                                                    |___/
 "#;
 /// Struct to hold the details of the fork for display purposes
 pub struct ForkPrintInfo {
@@ -108,6 +109,11 @@ pub struct TestNodeConfig {
     pub host: Vec<IpAddr>,
     /// Whether we need to enable the health check endpoint.
     pub health_check_endpoint: bool,
+    /// Block time in seconds for interval sealing.
+    /// If unset, node seals a new block as soon as there is at least one transaction.
+    pub block_time: Option<Duration>,
+    /// Maximum number of transactions per block
+    pub max_transactions: usize,
 }
 
 impl Default for TestNodeConfig {
@@ -155,6 +161,10 @@ impl Default for TestNodeConfig {
             offline: false,
             host: vec![IpAddr::V4(Ipv4Addr::LOCALHOST)],
             health_check_endpoint: false,
+
+            // Block sealing configuration default
+            block_time: None,
+            max_transactions: 1000,
         }
     }
 }
@@ -733,6 +743,13 @@ impl TestNodeConfig {
                 Err(anyhow!(error))
             }
         }
+    }
+
+    /// Set the block time
+    #[must_use]
+    pub fn with_block_time(mut self, block_time: Option<Duration>) -> Self {
+        self.block_time = block_time;
+        self
     }
 }
 
