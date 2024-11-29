@@ -59,6 +59,14 @@ pub struct TestNodeConfig {
     pub config_out: Option<String>,
     /// Port the node will listen on
     pub port: u16,
+    /// Print node config on startup if true
+    pub show_node_config: bool,
+    /// Print transactions and calls summary if true
+    pub show_tx_summary: bool,
+    /// If true, logs events.
+    pub show_event_logs: bool,
+    /// Disables printing of `console.log` invocations to stdout if true
+    pub disable_console_log: bool,
     /// Controls visibility of call logs
     pub show_calls: ShowCalls,
     /// Whether to show call output data
@@ -71,6 +79,8 @@ pub struct TestNodeConfig {
     pub show_gas_details: ShowGasDetails,
     /// Whether to resolve hash references
     pub resolve_hashes: bool,
+    /// Don’t print anything on startup if true
+    pub silent: bool,
     /// Configuration for system contracts
     pub system_contracts_options: system_contracts::Options,
     /// Directory to override bytecodes
@@ -132,12 +142,17 @@ impl Default for TestNodeConfig {
             // Node configuration defaults
             config_out: None,
             port: NODE_PORT,
+            show_node_config: true,
+            show_tx_summary: true,
+            show_event_logs: false,
+            disable_console_log: false,
             show_calls: Default::default(),
             show_outputs: false,
             show_storage_logs: Default::default(),
             show_vm_details: Default::default(),
             show_gas_details: Default::default(),
             resolve_hashes: false,
+            silent: false,
             system_contracts_options: Default::default(),
             override_bytecodes_dir: None,
             use_evm_emulator: false,
@@ -192,6 +207,11 @@ impl TestNodeConfig {
             )
             .expect("Failed writing json");
         }
+
+        if self.silent || !self.show_node_config {
+            return;
+        }
+
         let color = CustomColor::new(13, 71, 198);
 
         println!("{}", BANNER.custom_color(color));
@@ -599,6 +619,50 @@ impl TestNodeConfig {
     pub fn with_resolve_hashes(mut self, resolve: Option<bool>) -> Self {
         if let Some(resolve) = resolve {
             self.resolve_hashes = resolve;
+        }
+        self
+    }
+
+    /// Enable or disable silent mode
+    #[must_use]
+    pub fn with_silent(mut self, silent: Option<bool>) -> Self {
+        if let Some(silent) = silent {
+            self.silent = silent;
+        }
+        self
+    }
+
+    /// Enable or disable printing node config on startup
+    #[must_use]
+    pub fn with_show_node_config(mut self, show_node_config: Option<bool>) -> Self {
+        if let Some(show_node_config) = show_node_config {
+            self.show_node_config = show_node_config;
+        }
+        self
+    }
+
+    // Enable or disable printing transactions and calls summary
+    #[must_use]
+    pub fn with_show_tx_summary(mut self, show_tx_summary: Option<bool>) -> Self {
+        if let Some(show_tx_summary) = show_tx_summary {
+            self.show_tx_summary = show_tx_summary;
+        }
+        self
+    }
+    /// Enable or disable logging events
+    #[must_use]
+    pub fn with_show_event_logs(mut self, show_event_logs: Option<bool>) -> Self {
+        if let Some(show_event_logs) = show_event_logs {
+            self.show_event_logs = show_event_logs;
+        }
+        self
+    }
+
+    // Enable or disable printing of `console.log` invocations to stdout
+    #[must_use]
+    pub fn with_disable_console_log(mut self, disable_console_log: Option<bool>) -> Self {
+        if let Some(disable_console_log) = disable_console_log {
+            self.disable_console_log = disable_console_log;
         }
         self
     }
