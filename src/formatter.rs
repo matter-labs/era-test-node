@@ -19,12 +19,36 @@ use zksync_types::{
     fee_model::FeeModelConfigV2, Address, StorageLogWithPreviousValue, Transaction, H160, H256,
     U256,
 };
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExecutionOutput {
     RevertReason(VmRevertReason),
     HaltReason(Halt),
 }
+
+// Helper function to extract function selector from the reason string
+fn extract_function_selector_from_reason(reason: &str) -> Option<String> {
+    // The reason string contains something like "Error function_selector = 0x03eb8b54, data = 0x..."
+    let pattern = "Error function_selector = 0x";
+    if let Some(start) = reason.find(pattern) {
+        let selector_start = start + pattern.len();
+        // Function selector is 4 bytes (8 hex characters), but we should handle variable lengths
+        let selector_end = reason[selector_start..]
+            .find(|c: char| c == ',' || c.is_whitespace())
+            .map(|offset| selector_start + offset)
+            .unwrap_or(reason.len());
+        if selector_end > selector_start {
+            let func_selector_hex = &reason[selector_start..selector_end];
+            // Validate that the extracted string is valid hex and of correct length
+            if func_selector_hex.len() == 8
+                && func_selector_hex.chars().all(|c| c.is_ascii_hexdigit())
+            {
+                return Some(func_selector_hex.to_string());
+            }
+        }
+    }
+    None
+}
+
 // @dev elected to have GasDetails struct as we can do more with it in the future
 // We can provide more detailed understanding of gas errors and gas usage
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
@@ -167,125 +191,164 @@ impl Formatter {
         contract_address: Option<H160>,
         call: &Call,
         is_last_sibling: bool,
-        error_flag: ErrorFlags,
+        error_flag: &ErrorFlags,
         tx_result: &VmExecutionStatistics,
         output: &ExecutionOutput,
         tx: &Transaction,
     ) {
-        let contract_type = KNOWN_ADDRESSES
-            .get(&call.to)
-            .cloned()
-            .map(|known_address| known_address.contract_type)
-            .unwrap_or(ContractType::Unknown);
+        // Filter to only the last error call
+        if let Some(last_error_call) = find_last_error_call(call) {
+            let contract_type = KNOWN_ADDRESSES
+                .get(&last_error_call.to)
+                .cloned()
+                .map(|known_address| known_address.contract_type)
+                .unwrap_or(ContractType::Unknown);
 
-        let call_type_display = format!("{:?}", call.r#type).blue();
-        let remaining_gas_display = to_human_size(call.gas.into()).yellow();
-        let gas_used_display = format!("({})", to_human_size(call.gas_used.into())).bold();
+            let call_type_display = format!("{:?}", last_error_call.r#type).blue();
+            let remaining_gas_display = to_human_size(last_error_call.gas.into()).yellow();
+            let gas_used_display =
+                format!("({})", to_human_size(last_error_call.gas_used.into())).bold();
 
-        let contract_display = format_address_human_readable(
-            call.to,
-            initiator,
-            contract_address,
-            format!("{:?}", call.r#type).as_str(),
-        )
-        .unwrap_or_else(|| format!("{:}", format!("{:?}", call.to).bold()));
+            let contract_display = format_address_human_readable(
+                last_error_call.to,
+                initiator,
+                contract_address,
+                format!("{:?}", last_error_call.r#type).as_str(),
+            )
+            .unwrap_or_else(|| format!("{:}", format!("{:?}", last_error_call.to).bold()));
 
-        // Get function signature
-        let function_signature = if call.input.len() >= 4 {
-            let sig = hex::encode(&call.input[0..4]);
-            if contract_type == ContractType::Precompile {
-                format!("0x{}", sig)
+            let function_signature = if last_error_call.input.len() >= 4 {
+                let sig = hex::encode(&last_error_call.input[0..4]);
+                if contract_type == ContractType::Precompile {
+                    format!("0x{}", sig)
+                } else {
+                    block_on(async move {
+                        match resolver::decode_function_selector(&sig).await {
+                            Ok(Some(name)) => name,
+                            Ok(None) | Err(_) => format!("0x{}", sig),
+                        }
+                    })
+                }
             } else {
-                block_on(async move {
-                    match resolver::decode_function_selector(&sig).await {
-                        Ok(Some(name)) => name,
-                        Ok(None) | Err(_) => format!("0x{}", sig),
-                    }
-                })
-            }
-        } else {
-            "unknown".to_string()
-        };
+                "unknown".to_string()
+            };
 
-        let function_display = function_signature.cyan().bold();
+            let function_display = function_signature.cyan().bold();
 
-        let line = format!(
-            "{} [{}] {}::{} {}",
-            call_type_display,
-            remaining_gas_display,
-            contract_display,
-            function_display,
-            gas_used_display
-        );
+            let line = format!(
+                "{} [{}] {}::{} {}",
+                call_type_display,
+                remaining_gas_display,
+                contract_display,
+                function_display,
+                gas_used_display
+            );
 
-        // Handle errors and outputs within a new indentation scope
-        self.section(&line, is_last_sibling, |call_section| {
-            if call.revert_reason.is_some() || call.error.is_some() {
-                if let Some(ref reason) = call.revert_reason {
-                    call_section.format_error(true, &format!("🔴 Revert reason: {}", reason));
-                    call_section.format_error(true, &format!("🔴 Error output: {:?}", output));
-                    call_section.format_error(true, &format!("🔴 Error flag: {:?}", error_flag));
-                    if let Some(insight) = format_error_insight(&error_flag, tx_result) {
-                        call_section.format_error(true, &format!("🟡 Insight: {}", insight));
-                    }
-                    // Print failed transaction details
-                    let last_call = get_last_call(call);
-                    call_section.section(
-                        "🔴 Failed Transaction Summary",
-                        true,
-                        |summary_section| {
-                            for detail in format_transaction_error_summary(
-                                tx,
-                                last_call.gas_used,
-                                last_call.to,
-                                function_signature.clone(),
-                            ) {
-                                summary_section.format_log(true, &detail);
+            self.section(&line, is_last_sibling, |call_section| {
+                if last_error_call.revert_reason.is_some() || last_error_call.error.is_some() {
+                    if let Some(ref reason) = last_error_call.revert_reason {
+                        if reason.contains("Error function_selector = 0x") {
+                            // Extract the function selector from the reason string
+                            if let Some(func_selector_hex) =
+                                extract_function_selector_from_reason(reason)
+                            {
+                                let func_selector_hex_clone = func_selector_hex.clone();
+                                let error_function_name =
+                                    if contract_type == ContractType::Precompile {
+                                        format!("0x{}", func_selector_hex.clone())
+                                    } else {
+                                        block_on(async move {
+                                            match resolver::decode_function_selector(
+                                                &func_selector_hex_clone,
+                                            )
+                                            .await
+                                            {
+                                                Ok(Some(name)) => name,
+                                                Ok(None) | Err(_) => {
+                                                    format!("0x{}", func_selector_hex_clone)
+                                                }
+                                            }
+                                        })
+                                    };
+                                call_section.format_error(
+                                    true,
+                                    &format!(
+                                        "🔴 Revert reason: Error in function `{}` (selector 0x{}).",
+                                        error_function_name, func_selector_hex,
+                                    ),
+                                );
+                            } else {
+                                // If function selector couldn't be extracted, print the original reason
+                                call_section
+                                    .format_error(true, &format!("🔴 Revert reason: {}", reason));
                             }
-                        },
-                    );
-                }
-                if let Some(ref error) = call.error {
-                    call_section.format_error(true, &format!("🔴 Error: {}", error));
-                    call_section.format_error(true, &format!("🔴 Error output: {:?}", output));
-                    call_section.format_error(true, &format!("🔴 Error flag: {:?}", error_flag));
-                    if let Some(insight) = format_error_insight(&error_flag, tx_result) {
-                        call_section.format_error(true, &format!("🟡 Insight: {}", insight));
+                        } else {
+                            call_section
+                                .format_error(true, &format!("🔴 Revert reason: {}", reason));
+                        }
+
+                        call_section.format_error(true, &format!("🔴 Revert reason: {}", reason));
+                        call_section.format_error(true, &format!("🔴 Error output: {:?}", output));
+                        call_section
+                            .format_error(true, &format!("🔴 Error flag: {:?}", error_flag));
+                        if let Some(insight) = format_error_insight(
+                            &error_flag,
+                            tx_result,
+                            tx,
+                            function_signature.clone(),
+                            last_error_call.to,
+                            output,
+                        ) {
+                            call_section.format_error(true, &format!("🟡 Insight: {}", insight));
+                        }
+                        call_section.section(
+                            "🔴 Failed Transaction Summary",
+                            true,
+                            |summary_section| {
+                                for detail in format_transaction_error_summary(
+                                    tx,
+                                    last_error_call.gas_used,
+                                    last_error_call.to,
+                                    function_signature.clone(),
+                                ) {
+                                    summary_section.format_log(true, &detail);
+                                }
+                            },
+                        );
                     }
-                    // Print failed transaction details
-                    let last_call = get_last_call(call);
-                    call_section.section(
-                        "🔴 Failed Transaction Summary",
-                        true,
-                        |summary_section| {
-                            for detail in format_transaction_error_summary(
-                                tx,
-                                last_call.gas_used,
-                                last_call.to,
-                                function_signature,
-                            ) {
-                                summary_section.format_log(true, &detail);
-                            }
-                        },
-                    );
+                    if let Some(ref error) = last_error_call.error {
+                        call_section.format_error(true, &format!("🔴 Error: {}", error));
+                        call_section.format_error(true, &format!("🔴 Error output: {:?}", output));
+                        call_section
+                            .format_error(true, &format!("🔴 Error flag: {:?}", error_flag));
+                        if let Some(insight) = format_error_insight(
+                            &error_flag,
+                            tx_result,
+                            tx,
+                            function_signature.clone(),
+                            last_error_call.to,
+                            output,
+                        ) {
+                            call_section.format_error(true, &format!("🟡 Insight: {}", insight));
+                        }
+                        call_section.section(
+                            "🔴 Failed Transaction Summary",
+                            true,
+                            |summary_section| {
+                                for detail in format_transaction_error_summary(
+                                    tx,
+                                    last_error_call.gas_used,
+                                    last_error_call.to,
+                                    function_signature,
+                                ) {
+                                    summary_section.format_log(true, &detail);
+                                }
+                            },
+                        );
+                    }
                 }
-            }
-            // Process subcalls
-            let num_subcalls = call.calls.len();
-            for (i, subcall) in call.calls.iter().enumerate() {
-                let is_last_subcall = i == num_subcalls - 1;
-                call_section.print_structured_error(
-                    initiator,
-                    contract_address,
-                    subcall,
-                    is_last_subcall,
-                    error_flag,
-                    tx_result,
-                    output,
-                    tx,
-                );
-            }
-        });
+            });
+        }
     }
 
     /// Prints gas details for the transaction in a structured log.
@@ -764,14 +827,14 @@ impl Formatter {
                     section.item(true, "Execution Outcome", "Success");
                 }
                 zksync_multivm::interface::ExecutionResult::Revert { output } => {
-                    section.item(false, "Execution Outcome", "Failure");
+                    section.item(false, "Execution Outcome", "Reverted");
                     section.format_error(
                         true,
                         &format!("Revert Reason: {}", output.to_user_friendly_string()),
                     );
                 }
                 zksync_multivm::interface::ExecutionResult::Halt { reason } => {
-                    section.item(false, "Execution Outcome", "Failure");
+                    section.item(false, "Execution Outcome", "Halted");
                     section.format_error(true, &format!("Halt Reason: {}", reason));
                 }
             }
@@ -908,29 +971,184 @@ fn format_data(value: &[u8]) -> String {
 fn format_error_insight(
     error_flag: &ErrorFlags,
     tx_result: &VmExecutionStatistics,
+    tx: &Transaction,
+    fn_signature: String,
+    to: H160,
+    output: &ExecutionOutput,
 ) -> Option<String> {
-    match *error_flag {
-        ErrorFlags::INVALID_OPCODE => {
-            Some("The transaction attempted to execute an invalid opcode. This could indicate a bug in the contract or an unsupported operation.".to_string())
+    let mut messages = Vec::new();
+
+    // Check for specific transaction issues (e.g., insufficient deployer funds)
+    let to_address = tx.execute.contract_address.unwrap_or(to);
+    let fn_name = fn_signature.split('(').next().unwrap_or("");
+
+    if to_address
+        == H160::from_slice(&hex::decode("0000000000000000000000000000000000008006").unwrap())
+        && (fn_name == "validateTransaction" || fn_name == "202bcce7")
+    {
+        let gas_price = tx.max_fee_per_gas();
+        let used_gas = tx.gas_limit();
+
+        let paid_in_eth = calculate_eth_cost(gas_price.as_u64(), used_gas.as_u64());
+
+        messages.push(format!(
+            "The deployment failed likely due to insufficient balance in the deployer account. Required: {:.10} ETH. Please ensure the deployer has enough funds to cover the deployment costs.",
+            paid_in_eth.to_string().bold(),
+        ));
+    }
+
+    // Handle ExecutionOutput variants
+    match output {
+        ExecutionOutput::HaltReason(halt) => {
+            // Handle Halt variants with actionable insights
+            if let Some(halt_message) = match halt {
+                Halt::InnerTxError => Some(
+                    "Inner transaction error. This occurs when an internal transaction within the main transaction fails.".to_string(),
+                ),
+                Halt::ValidationFailed(reason) => Some(format!(
+                    "Account validation failed: {}. This occurs when the account's validation logic reverts or fails.",
+                    reason.to_user_friendly_string()
+                )),
+                Halt::PaymasterValidationFailed(reason) => Some(format!(
+                    "Paymaster validation failed: {}. This may be due to insufficient funds in the paymaster contract or custom validation logic.",
+                    reason.to_user_friendly_string()
+                )),
+                Halt::PrePaymasterPreparationFailed(reason) => Some(format!(
+                    "Pre-paymaster preparation failed: {}. Ensure that the pre-paymaster setup and parameters are correct.",
+                    reason.to_user_friendly_string()
+                )),
+                Halt::PayForTxFailed(reason) => Some(format!(
+                    "Failed to pay for the transaction: {}. Check if the payer has sufficient funds and that the payment logic is functioning correctly.",
+                    reason.to_user_friendly_string()
+                )),
+                Halt::FailedToChargeFee(reason) => Some(format!(
+                    "Failed to charge fee: {}. This may occur if the fee charging mechanism encountered an error.",
+                    reason.to_user_friendly_string()
+                )),
+                Halt::FailedToMarkFactoryDependencies(reason) => Some(format!(
+                    "Failed to mark factory dependencies: {}. Ensure that all factory dependencies are correctly specified and accessible.",
+                    reason.to_user_friendly_string()
+                )),
+                Halt::FromIsNotAnAccount => Some(
+                    "The sender is not a deployed account. Transactions must originate from an account contract, not a regular contract. Ensure that the 'from' address is a valid account."
+                        .to_string(),
+                ),
+                Halt::Unknown(reason) => Some(format!(
+                    "An unknown error occurred: {}. Please check the transaction details or contact support.",
+                    reason.to_user_friendly_string()
+                )),
+                Halt::UnexpectedVMBehavior(problem) => Some(format!(
+                    "Virtual machine entered an unexpected state: {}. Please contact the developers with the transaction details.",
+                    problem
+                )),
+                Halt::BootloaderOutOfGas => Some(
+                    "Bootloader ran out of gas. This may happen if the transaction requires more gas than provided. Consider increasing the gas limit."
+                        .to_string(),
+                ),
+                Halt::ValidationOutOfGas => Some(
+                    "Validation step ran out of gas. The validation logic may be too complex or require more gas. Consider optimizing the validation code or increasing the gas limit."
+                        .to_string(),
+                ),
+                Halt::NotEnoughGasProvided => Some(
+                    "Not enough gas provided for the bootloader to start the transaction. Increase the gas limit to proceed."
+                        .to_string(),
+                ),
+                Halt::TooBigGasLimit => Some(
+                    "The transaction's gas limit is too high and will not be executed by the server. Reduce the gas limit to within acceptable bounds."
+                        .to_string(),
+                ),
+                Halt::MissingInvocationLimitReached => Some(
+                    "The transaction produced too many cold storage accesses, reaching the missing invocation limit. Optimize your contract to reduce storage reads."
+                        .to_string(),
+                ),
+                Halt::FailedToSetL2Block(reason) => Some(format!(
+                    "Failed to set information about the L2 block: {}. Verify the L2 block details.",
+                    reason
+                )),
+                Halt::FailedToAppendTransactionToL2Block(reason) => Some(format!(
+                    "Failed to append the transaction to the current L2 block: {}. Ensure the transaction is valid.",
+                    reason
+                )),
+                Halt::VMPanic => Some(
+                    "The virtual machine panicked, indicating a critical issue. Please contact the developers with the transaction details."
+                        .to_string(),
+                ),
+                Halt::TracerCustom(reason) => Some(format!(
+                    "Execution aborted by tracer: {}. The tracer detected an issue and halted execution.",
+                    reason
+                )),
+                Halt::FailedToPublishCompressedBytecodes => Some(
+                    "Failed to publish compressed bytecodes. Ensure that the bytecodes are valid and properly formatted."
+                        .to_string(),
+                )
+            } {
+                messages.push(halt_message);
+            }
         }
-        ErrorFlags::NOT_ENOUGH_ERGS => {
-            Some(format!(
-                "The transaction ran out of gas. Total gas used: {}. Consider increasing the gas limit or refactoring contract.",
-                to_human_size(tx_result.gas_used.into()).bold()
-            ))
+        ExecutionOutput::RevertReason(revert_reason) => {
+            // Handle VmRevertReason variants with actionable insights
+            if let Some(revert_message) = match revert_reason {
+                VmRevertReason::General { msg, data } => Some(format!(
+                    "Contract execution reverted: {}. This indicates that the contract logic encountered an error and reverted the transaction.",
+                    msg
+                )),
+                VmRevertReason::InnerTxError => Some(
+                    "An internal transaction error occurred within the bootloader-based transaction. Check the inner transaction for issues."
+                        .to_string(),
+                ),
+                VmRevertReason::VmError => Some(
+                    "A virtual machine error occurred during execution. This may indicate a low-level issue or an unhandled exception."
+                        .to_string(),
+                ),
+                VmRevertReason::Unknown {
+                    function_selector,
+                    data,
+                } => Some(format!(
+                    "An unknown error occurred during contract execution. Function selector: 0x{}. Data: 0x{}. This may be due to unrecognized error types or corrupted data.",
+                    hex::encode(function_selector),
+                    hex::encode(data)
+                )),
+                _ => None,
+            } {
+                messages.push(revert_message);
+            }
         }
-        ErrorFlags::PRIVILAGED_ACCESS_NOT_FROM_KERNEL => {
-            Some("A privileged operation was attempted by a non-kernel account. Ensure that only authorized accounts perform kernel-level operations.".to_string())
-        }
-        ErrorFlags::WRITE_IN_STATIC_CONTEXT => {
-            Some("A write operation was attempted in a static context. Modify the contract logic to avoid state-changing operations in static calls.".to_string())
-        }
-        ErrorFlags::CALLSTACK_IS_FULL => {
-            Some("The call stack limit was reached. This might indicate deep or excessive recursion in the contract.".to_string())
-        }
+    }
+
+    // Handle `error_flag`
+    if let Some(error_flag_message) = match *error_flag {
+        ErrorFlags::INVALID_OPCODE => Some(
+            "The transaction attempted to execute an invalid opcode, possibly due to a bug in the contract code or an unsupported operation."
+                .to_string(),
+        ),
+        ErrorFlags::NOT_ENOUGH_ERGS => Some(format!(
+            "The transaction ran out of gas. Total gas used: {}. Consider increasing the gas limit or optimizing your contract.",
+            to_human_size(tx_result.gas_used.into()).bold()
+        )),
+        ErrorFlags::PRIVILAGED_ACCESS_NOT_FROM_KERNEL => Some(
+            "A privileged operation was attempted by a non-kernel account. Ensure that only authorized accounts perform privileged operations."
+                .to_string(),
+        ),
+        ErrorFlags::WRITE_IN_STATIC_CONTEXT => Some(
+            "A write operation was attempted in a static context. Modify your contract logic to avoid state-changing operations in static calls."
+                .to_string(),
+        ),
+        ErrorFlags::CALLSTACK_IS_FULL => Some(
+            "The call stack limit was reached, possibly due to deep or excessive recursion. Consider refactoring to reduce call depth."
+                .to_string(),
+        ),
         _ => None,
+    } {
+        messages.push(error_flag_message);
+    }
+
+    if messages.is_empty() {
+        None
+    } else {
+        Some(messages.join(" "))
     }
 }
+
 fn format_transaction_error_summary(
     tx: &Transaction,
     gas_used: u64,
@@ -946,20 +1164,19 @@ fn format_transaction_error_summary(
         }
         ExecuteTransactionCommon::L2(data) => {
             let mut details = vec![
-                format!(
-                    "{} {:?}",
-                    "Transaction Type:".bold().red(),
-                    data.transaction_type
-                ),
+                format!("{} {:?}", "Transaction Type:".bold().red(), tx.tx_format()),
                 format!(
                     "{} {}",
                     "Nonce:".bold().red(),
-                    data.nonce.to_string().dimmed().red()
+                    tx.nonce()
+                        .map_or("N/A".to_string(), |nonce| nonce.to_string())
+                        .dimmed()
+                        .red()
                 ),
                 format!(
                     "{} {}",
                     "From:".bold().red(),
-                    format!("0x{:x}", data.initiator_address).dimmed().red()
+                    format!("0x{:x}", tx.initiator_account()).dimmed().red()
                 ),
                 format!(
                     "{} {}",
@@ -1027,14 +1244,23 @@ fn resolve_topics(topics: &[H256], resolve_hashes: bool) -> Vec<String> {
         join_all(futures).await
     })
 }
+/// Finds the last call containing an error or revert reason in the call stack.
+fn find_last_error_call(call: &Call) -> Option<&Call> {
+    let mut last_error_call = None;
 
-fn get_last_call(call: &Call) -> &Call {
-    if call.calls.is_empty() {
-        call
-    } else {
-        // Recursively fetch the last call from subcalls
-        get_last_call(call.calls.last().unwrap())
+    // If the current call contains an error or revert reason, mark it as the last seen
+    if call.revert_reason.is_some() || call.error.is_some() {
+        last_error_call = Some(call);
     }
+
+    // Recursively check subcalls
+    for subcall in &call.calls {
+        if let Some(sub_error_call) = find_last_error_call(subcall) {
+            last_error_call = Some(sub_error_call);
+        }
+    }
+
+    last_error_call
 }
 
 /// Amount of pubdata that given write has cost.
@@ -1088,6 +1314,8 @@ pub fn print_transaction_summary(
     tx: &Transaction,
     tx_result: &VmExecutionResultAndLogs,
     status: &str,
+    call_traces: &Vec<Call>,
+    error_flags: &ErrorFlags,
 ) {
     // Calculate used and refunded gas
     let used_gas = tx.gas_limit() - tx_result.refunds.gas_refunded;
@@ -1130,9 +1358,28 @@ pub fn print_transaction_summary(
         // and do not see the structured logs.
         // Should have Insights for revert and halt.
         // Errors defined here: https://github.com/matter-labs/zksync-era/blob/main/core/lib/vm_interface/src/types/errors/tx_revert_reason.rs
-        ExecutionResult::Revert { output: _ } => {}
+        ExecutionResult::Revert { output } => {
+            tracing::info!("Reverted: {:?}", output.to_user_friendly_string());
+        }
         ExecutionResult::Halt { reason } => {
             tracing::info!("Halted: {:?}", reason);
+            tracing::info!("");
+            let mut formatter = Formatter::new();
+            tracing::error!("{}", "[Transaction Halted]".red());
+            let num_calls = call_traces.len();
+            for (i, call) in call_traces.iter().enumerate() {
+                let is_last_sibling = i == num_calls - 1;
+                formatter.print_structured_error(
+                    tx.initiator_account(),
+                    tx.execute.contract_address,
+                    call,
+                    is_last_sibling,
+                    error_flags,
+                    &tx_result.statistics,
+                    &ExecutionOutput::HaltReason(reason.clone()),
+                    &tx,
+                );
+            }
         }
     }
 }

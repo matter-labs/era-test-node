@@ -621,7 +621,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
                         tx.execute.contract_address,
                         call,
                         is_last_sibling,
-                        error_flags,
+                        &error_flags,
                         &estimate_gas_result.statistics,
                         &formatter::ExecutionOutput::RevertReason(output.clone()),
                         &tx,
@@ -658,7 +658,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
             }
             ExecutionResult::Halt { reason } => {
                 let mut formatter = formatter::Formatter::new();
-                tracing::error!("{}", "[Transaction Reverted]".red());
+                tracing::error!("{}", "[Transaction Halted]".red());
                 let num_calls = call_traces.len();
                 for (i, call) in call_traces.iter().enumerate() {
                     let is_last_sibling = i == num_calls - 1;
@@ -667,7 +667,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
                         tx.execute.contract_address,
                         call,
                         is_last_sibling,
-                        error_flags,
+                        &error_flags,
                         &estimate_gas_result.statistics,
                         &formatter::ExecutionOutput::HaltReason(reason.clone()),
                         &tx,
@@ -1209,7 +1209,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
                         tx.execute.contract_address,
                         call,
                         is_last_sibling,
-                        error_flags,
+                        &error_flags,
                         &tx_result.statistics,
                         &formatter::ExecutionOutput::RevertReason(output.clone()),
                         &tx,
@@ -1217,6 +1217,22 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
                 }
             }
             ExecutionResult::Halt { reason } => {
+                let mut formatter = formatter::Formatter::new();
+                tracing::error!("{}", "[Transaction Halted]".red());
+                let num_calls = call_traces.len();
+                for (i, call) in call_traces.iter().enumerate() {
+                    let is_last_sibling = i == num_calls - 1;
+                    formatter.print_structured_error(
+                        tx.initiator_account(),
+                        tx.execute.contract_address,
+                        call,
+                        is_last_sibling,
+                        &error_flags,
+                        &tx_result.statistics,
+                        &formatter::ExecutionOutput::HaltReason(reason.clone()),
+                        &tx,
+                    );
+                }
                 tracing::info!("Call: {} {}", "HALTED".red(), reason)
             }
         };
@@ -1339,6 +1355,10 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         let tx_result = vm.inspect(&mut tracers.into(), InspectExecutionMode::OneTx);
 
         let call_traces = call_tracer_result.get().unwrap();
+        let error_flags = Arc::try_unwrap(error_flags_result)
+            .unwrap()
+            .take()
+            .unwrap_or_default();
 
         let spent_on_pubdata =
             tx_result.statistics.gas_used - tx_result.statistics.computational_gas_used as u64;
@@ -1356,6 +1376,8 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
             &tx,
             &tx_result,
             status,
+            call_traces,
+            &error_flags,
         );
         tracing::info!("");
         // Print gas details if enabled
