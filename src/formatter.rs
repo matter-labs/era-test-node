@@ -443,7 +443,7 @@ impl Formatter {
             (ContractType::System, ShowCalls::System) => true,
         };
 
-        // Collect subcalls that should be printed
+        // Collect subcalls that should be printed (e.g. handle filtering)
         let subcalls_to_print: Vec<&Call> = call
             .calls
             .iter()
@@ -509,7 +509,7 @@ impl Formatter {
                 }
             });
         } else {
-            // Process subcalls at the same indentation level
+            // Call is not printed; process subcalls at the same indentation level
             let num_subcalls = subcalls_to_print.len();
             for (i, subcall) in subcalls_to_print.iter().enumerate() {
                 let is_last_subcall = is_last_sibling && (i == num_subcalls - 1);
