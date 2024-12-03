@@ -1,5 +1,4 @@
 //! In-memory node, that supports forking other networks.
-use anyhow::{anyhow, Context as _};
 use colored::Colorize;
 use indexmap::IndexMap;
 use once_cell::sync::OnceCell;
@@ -10,12 +9,15 @@ use std::{
     str::FromStr,
     sync::{Arc, RwLock},
 };
+
 use zksync_contracts::BaseSystemContracts;
+use zksync_multivm::vm_latest::HistoryEnabled;
 use zksync_multivm::{
     interface::{
         storage::{ReadStorage, StoragePtr, WriteStorage},
         Call, ExecutionResult, InspectExecutionMode, L1BatchEnv, L2Block, L2BlockEnv, SystemEnv,
         TxExecutionMode, VmExecutionResultAndLogs, VmFactory, VmInterface, VmInterfaceExt,
+        VmInterfaceHistoryEnabled,
     },
     tracers::CallTracer,
     utils::{
@@ -925,6 +927,12 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
         self.blocks.insert(block.hash, block);
         self.filters.notify_new_block(block_hash);
     }
+
+    fn get_block(&self, block_number: L2BlockNumber) -> Option<&Block<TransactionVariant>> {
+        self.block_hashes
+            .get(&(block_number.0 as u64))
+            .and_then(|hash| self.blocks.get(hash))
+    }
 }
 
 /// Creates a restorable snapshot for the [InMemoryNodeInner]. The snapshot contains all the necessary
@@ -1051,13 +1059,13 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
     pub fn read_inner(&self) -> anyhow::Result<RwLockReadGuard<'_, InMemoryNodeInner<S>>> {
         self.inner
             .read()
-            .map_err(|e| anyhow!("InMemoryNode lock is poisoned: {}", e))
+            .map_err(|e| anyhow::anyhow!("InMemoryNode lock is poisoned: {}", e))
     }
 
     pub fn write_inner(&self) -> anyhow::Result<RwLockWriteGuard<'_, InMemoryNodeInner<S>>> {
         self.inner
             .write()
-            .map_err(|e| anyhow!("InMemoryNode lock is poisoned: {}", e))
+            .map_err(|e| anyhow::anyhow!("InMemoryNode lock is poisoned: {}", e))
     }
 
     pub fn get_cache_config(&self) -> Result<CacheConfig, String> {
@@ -1126,17 +1134,57 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         Ok(())
     }
 
-    /// Applies multiple transactions - but still one per L1 batch.
-    pub fn apply_txs(&self, txs: Vec<L2Tx>) -> anyhow::Result<()> {
-        tracing::info!("Running {:?} transactions (one per batch)", txs.len());
+    /// Applies multiple transactions across multiple blocks. All transactions are expected to be
+    /// executable. Note that on error this method may leave node in partially applied state (i.e.
+    /// some txs have been applied while others have not).
+    pub fn apply_txs(&self, txs: Vec<L2Tx>, max_transactions: usize) -> anyhow::Result<()> {
+        tracing::debug!(count = txs.len(), "applying transactions");
+
+        // Create a temporary tx pool (i.e. state is not shared with the node mempool).
+        let pool = TxPool::new(self.impersonation.clone());
+        pool.add_txs(txs);
 
         // Lock time so that the produced blocks are guaranteed to be sequential in time.
         let mut time = self.time.lock();
-        for tx in txs {
+        while let Some(tx_batch) = pool.take_uniform(max_transactions) {
             // Getting contracts is reasonably cheap, so we don't cache them. We may need differing contracts
-            // depending on whether impersonation should be enabled for a transaction.
-            let system_contracts = self.system_contracts_for_tx(tx.initiator_account())?;
-            self.seal_block(&mut time, vec![tx], system_contracts)?;
+            // depending on whether impersonation should be enabled for a block.
+            let system_contracts = self
+                .system_contracts
+                .contracts(TxExecutionMode::VerifyExecute, tx_batch.impersonating)
+                .clone();
+            let expected_tx_hashes = tx_batch
+                .txs
+                .iter()
+                .map(|tx| tx.hash())
+                .collect::<HashSet<_>>();
+            let block_numer = self.seal_block(&mut time, tx_batch.txs, system_contracts)?;
+
+            // Fetch the block that was just sealed
+            let inner = self.read_inner()?;
+            let block = inner
+                .get_block(block_numer)
+                .expect("freshly sealed block could not be found in storage");
+
+            // Calculate tx hash set from that block
+            let actual_tx_hashes = block
+                .transactions
+                .iter()
+                .map(|tx| match tx {
+                    TransactionVariant::Full(tx) => tx.hash,
+                    TransactionVariant::Hash(tx_hash) => *tx_hash,
+                })
+                .collect::<HashSet<_>>();
+
+            // Calculate the difference between expected transaction hash set and the actual one.
+            // If the difference is not empty it means some transactions were not executed (i.e.
+            // were halted).
+            let diff_tx_hashes = expected_tx_hashes
+                .difference(&actual_tx_hashes)
+                .collect::<Vec<_>>();
+            if !diff_tx_hashes.is_empty() {
+                anyhow::bail!("Failed to apply some transactions: {:?}", diff_tx_hashes);
+            }
         }
 
         Ok(())
@@ -1781,8 +1829,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         let (batch_env, mut block_ctx) = inner.create_l1_batch_env(time, storage.clone());
         drop(inner);
 
-        let mut vm: Vm<_, HistoryDisabled> =
-            Vm::new(batch_env.clone(), system_env, storage.clone());
+        let mut vm: Vm<_, HistoryEnabled> = Vm::new(batch_env.clone(), system_env, storage.clone());
 
         // Compute block hash. Note that the computed block hash here will be different than that in production.
         let tx_hashes = txs.iter().map(|t| t.hash()).collect::<Vec<_>>();
@@ -1790,8 +1837,20 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         block_ctx.hash = hash;
 
         // Execute transactions and bootloader
+        let mut executed_tx_hashes = Vec::with_capacity(tx_hashes.len());
         for tx in txs {
-            self.run_l2_tx(tx, &block_ctx, &batch_env, &mut vm)?;
+            // Executing a next transaction means that a previous transaction was either rolled back (in which case its snapshot
+            // was already removed), or that we build on top of it (in which case, it can be removed now).
+            vm.pop_snapshot_no_rollback();
+            // Save pre-execution VM snapshot.
+            vm.make_snapshot();
+            let hash = tx.hash();
+            if let Err(e) = self.run_l2_tx(tx, &block_ctx, &batch_env, &mut vm) {
+                tracing::error!("Error while executing transaction: {e}");
+                vm.rollback_to_the_latest_snapshot();
+            } else {
+                executed_tx_hashes.push(hash);
+            }
         }
         vm.execute(InspectExecutionMode::Bootloader);
 
@@ -1806,11 +1865,11 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
 
         let mut transactions = Vec::new();
         let mut tx_results = Vec::new();
-        for tx_hash in &tx_hashes {
-            let tx_result = inner
-                .tx_results
-                .get(tx_hash)
-                .context("tx result was not saved after a successful execution")?;
+        for tx_hash in &executed_tx_hashes {
+            let Some(tx_result) = inner.tx_results.get(tx_hash) else {
+                // Skipping halted transaction
+                continue;
+            };
             tx_results.push(&tx_result.info.result);
 
             let mut transaction = zksync_types::api::Transaction::from(tx_result.info.tx.clone());
@@ -1867,10 +1926,10 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         inner.current_batch = inner.current_batch.saturating_add(1);
         inner.apply_block(time, block, 0);
 
-        // Hack to ensure we don't mine twice the amount of requested empty blocks (i.e. one per
-        // batch).
+        // Hack to ensure we don't mine two empty blocks in the same batch. Otherwise this creates
+        // weird side effect on the VM side wrt virtual block logic.
         // TODO: Remove once we separate batch sealing from block sealing
-        if !tx_hashes.is_empty() {
+        if !executed_tx_hashes.is_empty() {
             // With the introduction of 'l2 blocks' (and virtual blocks),
             // we are adding one l2 block at the end of each batch (to handle things like remaining events etc).
             // You can look at insert_fictive_l2_block function in VM to see how this fake block is inserted.
