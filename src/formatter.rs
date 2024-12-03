@@ -416,6 +416,7 @@ impl Formatter {
         );
     }
     /// Prints the call stack of either the system or user calls in a structured log.
+    // Refactored print_call method
     #[allow(clippy::too_many_arguments)]
     pub fn print_call(
         &mut self,
@@ -443,7 +444,7 @@ impl Formatter {
             (ContractType::System, ShowCalls::System) => true,
         };
 
-        // Collect subcalls that should be printed (e.g. handle filtering)
+        // Collect subcalls that should be printed
         let subcalls_to_print: Vec<&Call> = call
             .calls
             .iter()
@@ -467,57 +468,20 @@ impl Formatter {
             .collect();
 
         if should_print {
-            let call_type_display = format!("{:?}", call.r#type).blue();
-            let remaining_gas_display = to_human_size(call.gas.into()).yellow();
-            let gas_used_display = format!("({})", to_human_size(call.gas_used.into())).bold();
-
-            let contract_display = format_address_human_readable(
-                call.to,
-                initiator,
-                contract_address,
-                format!("{:?}", call.r#type).as_str(),
-            )
-            .unwrap_or_else(|| format!("{:}", format!("{:?}", call.to).bold()));
-
-            // Get function signature
-            let function_signature = if call.input.len() >= 4 {
-                let sig = hex::encode(&call.input[0..4]);
-                if contract_type == ContractType::Precompile || !resolve_hashes {
-                    format!("0x{}", sig)
-                } else {
-                    block_on(async move {
-                        match resolver::decode_function_selector(sig.clone()).await {
-                            Ok(Some(name)) => name,
-                            Ok(None) | Err(_) => format!("0x{}", sig),
-                        }
-                    })
-                }
-            } else {
-                "unknown".to_string()
-            };
-
-            let function_display = function_signature.cyan().bold();
-
-            let line = format!(
-                "{} [{}] {}::{} {}",
-                call_type_display,
-                remaining_gas_display,
-                contract_display,
-                function_display,
-                gas_used_display
-            );
+            let (line, function_signature, contract_type) =
+                format_call_info(initiator, contract_address, call, resolve_hashes);
 
             // Handle errors and outputs within a new indentation scope
-            // TODO: can make this more informative by adding "Suggested action" for errors
             self.section(&line, is_last_sibling, |call_section| {
-                if call.revert_reason.is_some() || call.error.is_some() {
-                    if let Some(ref reason) = call.revert_reason {
-                        call_section.format_error(true, &format!("🔴 Revert reason: {}", reason));
-                    }
-                    if let Some(ref error) = call.error {
-                        call_section.format_error(true, &format!("🔴 Error: {}", error));
-                    }
-                }
+                format_call_errors(
+                    call_section,
+                    call,
+                    None,
+                    None,
+                    None,
+                    &function_signature,
+                    contract_type,
+                );
 
                 if show_outputs && !call.output.is_empty() {
                     let output_display = call
@@ -546,7 +510,7 @@ impl Formatter {
                 }
             });
         } else {
-            // Call is not printed; process subcalls at the same indentation level
+            // Process subcalls at the same indentation level
             let num_subcalls = subcalls_to_print.len();
             for (i, subcall) in subcalls_to_print.iter().enumerate() {
                 let is_last_subcall = is_last_sibling && (i == num_subcalls - 1);
@@ -562,6 +526,7 @@ impl Formatter {
             }
         }
     }
+
     /// Prints the storage logs of the system in a structured log.
     pub fn print_storage_logs(
         &mut self,
@@ -644,6 +609,7 @@ impl Formatter {
 
     /// Prints structured error message with insights.
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     pub fn print_structured_error(
         &mut self,
         initiator: Address,
@@ -657,120 +623,19 @@ impl Formatter {
     ) {
         // Filter to only the last error call
         if let Some(last_error_call) = find_last_error_call(call) {
-            let contract_type = KNOWN_ADDRESSES
-                .get(&last_error_call.to)
-                .cloned()
-                .map(|known_address| known_address.contract_type)
-                .unwrap_or(ContractType::Unknown);
-
-            let call_type_display = format!("{:?}", last_error_call.r#type).blue();
-            let remaining_gas_display = to_human_size(last_error_call.gas.into()).yellow();
-            let gas_used_display =
-                format!("({})", to_human_size(last_error_call.gas_used.into())).bold();
-
-            let contract_display = format_address_human_readable(
-                last_error_call.to,
-                initiator,
-                contract_address,
-                format!("{:?}", last_error_call.r#type).as_str(),
-            )
-            .unwrap_or_else(|| format!("{:}", format!("{:?}", last_error_call.to).bold()));
-
-            let function_signature = if last_error_call.input.len() >= 4 {
-                let sig = hex::encode(&last_error_call.input[0..4]);
-                if contract_type == ContractType::Precompile {
-                    format!("0x{}", sig)
-                } else {
-                    block_on(async move {
-                        match resolver::decode_function_selector(sig.clone()).await {
-                            Ok(Some(name)) => name,
-                            Ok(None) | Err(_) => format!("0x{}", sig),
-                        }
-                    })
-                }
-            } else {
-                "unknown".to_string()
-            };
-
-            let function_display = function_signature.cyan().bold();
-
-            let line = format!(
-                "{} [{}] {}::{} {}",
-                call_type_display,
-                remaining_gas_display,
-                contract_display,
-                function_display,
-                gas_used_display
-            );
+            let (line, function_signature, contract_type) =
+                format_call_info(initiator, contract_address, last_error_call, true);
 
             self.section(&line, is_last_sibling, |call_section| {
-                if last_error_call.revert_reason.is_some() || last_error_call.error.is_some() {
-                    if let Some(ref reason) = last_error_call.revert_reason {
-                        if reason.contains("Error function_selector = 0x") {
-                            // Extract the function selector from the reason string
-                            if let Some(func_selector_hex) =
-                                extract_function_selector_from_reason(reason)
-                            {
-                                let error_function_name = get_error_function_name(
-                                    func_selector_hex.clone(),
-                                    contract_type,
-                                );
-                                call_section.format_error(
-                                    true,
-                                    &format!(
-                                        "🔴 Revert reason: Error in function `{}` (selector 0x{}).",
-                                        error_function_name, func_selector_hex,
-                                    ),
-                                );
-                            } else {
-                                // If function selector couldn't be extracted, print the original reason
-                                call_section
-                                    .format_error(true, &format!("🔴 Revert reason: {}", reason));
-                            }
-                        }
-                        call_section.format_error(true, &format!("🔴 Error output: {:?}", output));
-                        if error_flag != &ErrorFlags::empty() {
-                            call_section
-                                .format_error(true, &format!("🔴 Error flag: {:?}", error_flag));
-                        }
-                        call_section.section(
-                            "🔴 Failed Transaction Summary",
-                            true,
-                            |summary_section| {
-                                for detail in format_transaction_error_summary(
-                                    tx,
-                                    last_error_call.gas_used,
-                                    last_error_call.to,
-                                    function_signature.clone(),
-                                ) {
-                                    summary_section.format_log(true, &detail);
-                                }
-                            },
-                        );
-                    }
-                    if let Some(ref error) = last_error_call.error {
-                        call_section.format_error(true, &format!("🔴 Error: {}", error));
-                        call_section.format_error(true, &format!("🔴 Error output: {:?}", output));
-                        if error_flag != &ErrorFlags::empty() {
-                            call_section
-                                .format_error(true, &format!("🔴 Error flag: {:?}", error_flag));
-                        }
-                        call_section.section(
-                            "🔴 Failed Transaction Summary",
-                            true,
-                            |summary_section| {
-                                for detail in format_transaction_error_summary(
-                                    tx,
-                                    last_error_call.gas_used,
-                                    last_error_call.to,
-                                    function_signature,
-                                ) {
-                                    summary_section.format_log(true, &detail);
-                                }
-                            },
-                        );
-                    }
-                }
+                format_call_errors(
+                    call_section,
+                    last_error_call,
+                    Some(output),
+                    Some(error_flag),
+                    Some(tx),
+                    &function_signature,
+                    contract_type,
+                );
             });
         }
     }
@@ -796,7 +661,6 @@ fn build_prefix(sibling_stack: &[bool], is_last_sibling: bool) -> String {
     }
     prefix
 }
-
 /// Finds the last call containing an error or revert reason in the call stack.
 fn find_last_error_call(call: &Call) -> Option<&Call> {
     let mut last_error_call = None;
@@ -918,6 +782,121 @@ fn format_data(value: &[u8]) -> String {
         }
     }
 }
+
+// Helper function to format call information
+fn format_call_info(
+    initiator: Address,
+    contract_address: Option<H160>,
+    call: &Call,
+    resolve_hashes: bool,
+) -> (String, String, ContractType) {
+    let contract_type = KNOWN_ADDRESSES
+        .get(&call.to)
+        .cloned()
+        .map(|known_address| known_address.contract_type)
+        .unwrap_or(ContractType::Unknown);
+
+    let call_type_display = format!("{:?}", call.r#type).blue();
+    let remaining_gas_display = to_human_size(call.gas.into()).yellow();
+    let gas_used_display = format!("({})", to_human_size(call.gas_used.into())).bold();
+
+    let contract_display = format_address_human_readable(
+        call.to,
+        initiator,
+        contract_address,
+        format!("{:?}", call.r#type).as_str(),
+    )
+    .unwrap_or_else(|| format!("{:}", format!("{:?}", call.to).bold()));
+
+    // Get function signature
+    let function_signature = if call.input.len() >= 4 {
+        let sig = hex::encode(&call.input[0..4]);
+        if contract_type == ContractType::Precompile || !resolve_hashes {
+            format!("0x{}", sig)
+        } else {
+            block_on(async move {
+                match resolver::decode_function_selector(sig.clone()).await {
+                    Ok(Some(name)) => name,
+                    Ok(None) | Err(_) => format!("0x{}", sig),
+                }
+            })
+        }
+    } else {
+        "unknown".to_string()
+    };
+
+    let function_display = function_signature.cyan().bold();
+
+    let line = format!(
+        "{} [{}] {}::{} {}",
+        call_type_display,
+        remaining_gas_display,
+        contract_display,
+        function_display,
+        gas_used_display
+    );
+
+    (line, function_signature, contract_type)
+}
+
+// Helper function to handle error formatting
+fn format_call_errors(
+    call_section: &mut Formatter,
+    call: &Call,
+    output: Option<&ExecutionOutput>,
+    error_flag: Option<&ErrorFlags>,
+    tx: Option<&Transaction>,
+    function_signature: &str,
+    contract_type: ContractType,
+) {
+    if call.revert_reason.is_some() || call.error.is_some() {
+        if let Some(ref reason) = call.revert_reason {
+            if reason.contains("Error function_selector = 0x") {
+                // Extract the function selector from the reason string
+                if let Some(func_selector_hex) = extract_function_selector_from_reason(reason) {
+                    let error_function_name =
+                        get_error_function_name(func_selector_hex.clone(), contract_type);
+                    call_section.format_error(
+                        true,
+                        &format!(
+                            "🔴 Revert reason: Error in function `{}` (selector 0x{}).",
+                            error_function_name, func_selector_hex,
+                        ),
+                    );
+                } else {
+                    // If function selector couldn't be extracted, print the original reason
+                    call_section.format_error(true, &format!("🔴 Revert reason: {}", reason));
+                }
+            } else {
+                call_section.format_error(true, &format!("🔴 Revert reason: {}", reason));
+            }
+        }
+        if let Some(ref error) = call.error {
+            call_section.format_error(true, &format!("🔴 Error: {}", error));
+        }
+        if let Some(output) = output {
+            call_section.format_error(true, &format!("🔴 Error output: {:?}", output));
+        }
+        if let Some(error_flag) = error_flag {
+            if error_flag != &ErrorFlags::empty() {
+                call_section.format_error(true, &format!("🔴 Error flag: {:?}", error_flag));
+            }
+        }
+        if let Some(tx) = tx {
+            call_section.section("🔴 Failed Transaction Summary", true, |summary_section| {
+                for detail in format_transaction_error_summary(
+                    tx,
+                    call.gas_used,
+                    call.to,
+                    function_signature.to_string(),
+                ) {
+                    summary_section.format_log(true, &detail);
+                }
+            });
+        }
+    }
+}
+
 fn format_transaction_error_summary(
     tx: &Transaction,
     gas_used: u64,
@@ -1099,7 +1078,7 @@ pub fn print_transaction_summary(
     tx: &Transaction,
     tx_result: &VmExecutionResultAndLogs,
     status: &str,
-    call_traces: &Vec<Call>,
+    call_traces: &[Call],
     error_flags: &ErrorFlags,
 ) {
     // Calculate used and refunded gas
@@ -1141,18 +1120,18 @@ pub fn print_transaction_summary(
         }
         ExecutionResult::Revert { output } => {
             print_transaction_error(
-                &tx,
-                &call_traces,
-                &error_flags,
+                tx,
+                call_traces,
+                error_flags,
                 &tx_result.statistics,
                 &ExecutionOutput::RevertReason(output.clone()),
             );
         }
         ExecutionResult::Halt { reason } => {
             print_transaction_error(
-                &tx,
-                &call_traces,
-                &error_flags,
+                tx,
+                call_traces,
+                error_flags,
                 &tx_result.statistics,
                 &ExecutionOutput::HaltReason(reason.clone()),
             );
@@ -1169,7 +1148,7 @@ pub fn print_transaction_error(
 ) {
     let mut formatter = Formatter::new();
     tracing::info!("");
-    tracing::error!("{}", "[Transaction Reverted]".red());
+    tracing::error!("{}", "[Transaction Error]".red());
     let num_calls = call_traces.len();
     for (i, call) in call_traces.iter().enumerate() {
         let is_last_sibling = i == num_calls - 1;
@@ -1179,7 +1158,7 @@ pub fn print_transaction_error(
             call,
             is_last_sibling,
             error_flags,
-            &tx_result,
+            tx_result,
             &output.clone(),
             tx,
         );

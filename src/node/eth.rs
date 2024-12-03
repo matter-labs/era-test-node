@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 
 use anyhow::Context as _;
-use colored::Colorize;
 use futures::FutureExt;
 use itertools::Itertools;
 use zksync_multivm::interface::{ExecutionResult, TxExecutionMode};
