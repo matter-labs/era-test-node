@@ -35,6 +35,14 @@ impl Default for ConsoleLogHandler {
 }
 
 impl ConsoleLogHandler {
+    pub fn handle_calls_recursive(&self, calls: &Vec<Call>) {
+        tracing::info!("");
+        tracing::info!("==== Console logs: ");
+
+        for call in calls {
+            self.handle_call_recursive(call);
+        }
+    }
     pub fn handle_call_recursive(&self, current_call: &Call) {
         self.handle_call(current_call);
         for call in &current_call.calls {

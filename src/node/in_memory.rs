@@ -70,7 +70,7 @@ use crate::{
     },
     observability::Observability,
     system_contracts::{self, SystemContracts},
-    utils::{bytecode_to_factory_dep, create_debug_output, into_jsrpc_error, to_human_size},
+    utils::{bytecode_to_factory_dep, create_debug_output, into_jsrpc_error},
 };
 
 /// Max possible size of an ABI encoded tx (in bytes).
@@ -1259,7 +1259,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         }
 
         let tx: Transaction = l2_tx.into();
-        vm.push_transaction(tx);
+        vm.push_transaction(tx.clone());
 
         let call_tracer_result = Arc::new(OnceCell::default());
 
@@ -1275,6 +1275,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
             .unwrap_or_default();
 
         if inner.config.show_tx_summary {
+            tracing::info!("");
             match &tx_result.result {
                 ExecutionResult::Success { output } => {
                     tracing::info!("Call: {}", "SUCCESS".green());
@@ -1291,20 +1292,26 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         }
 
         if !inner.config.disable_console_log {
-            tracing::info!("");
-            tracing::info!("=== Console Logs: ");
-            for call in &call_traces {
-                inner.console_log_handler.handle_call_recursive(call);
-            }
+            inner
+                .console_log_handler
+                .handle_calls_recursive(&call_traces);
         }
 
         if inner.config.show_calls != ShowCalls::None {
             tracing::info!("");
-            tracing::info!("=== Call traces:");
-            for call in &call_traces {
-                formatter::print_call(
+            tracing::info!(
+                "[Transaction Execution] ({} calls)",
+                call_traces[0].calls.len()
+            );
+            let num_calls = call_traces.len();
+            for (i, call) in call_traces.iter().enumerate() {
+                let is_last_sibling = i == num_calls - 1;
+                let mut formatter = formatter::Formatter::new();
+                formatter.print_call(
+                    tx.initiator_account(),
+                    tx.execute.contract_address,
                     call,
-                    0,
+                    is_last_sibling,
                     &inner.config.show_calls,
                     inner.config.show_outputs,
                     inner.config.resolve_hashes,
@@ -1315,6 +1322,7 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         Ok(tx_result.result)
     }
 
+    // Prints the gas details of the transaction for debugging purposes.
     fn display_detailed_gas_info(
         &self,
         bootloader_debug_result: Option<&eyre::Result<BootloaderDebug, String>>,
@@ -1323,163 +1331,21 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         if let Some(bootloader_result) = bootloader_debug_result {
             let bootloader_debug = bootloader_result.clone()?;
 
-            tracing::info!("┌─────────────────────────┐");
-            tracing::info!("│       GAS DETAILS       │");
-            tracing::info!("└─────────────────────────┘");
+            let gas_details = formatter::compute_gas_details(&bootloader_debug, spent_on_pubdata);
+            let mut formatter = formatter::Formatter::new();
 
-            // Total amount of gas (should match tx.gas_limit).
-            let total_gas_limit = bootloader_debug
-                .total_gas_limit_from_user
-                .saturating_sub(bootloader_debug.reserved_gas);
+            let fee_model_config = self
+                .inner
+                .read()
+                .unwrap()
+                .fee_input_provider
+                .get_fee_model_config();
 
-            let intrinsic_gas = total_gas_limit - bootloader_debug.gas_limit_after_intrinsic;
-            let gas_for_validation =
-                bootloader_debug.gas_limit_after_intrinsic - bootloader_debug.gas_after_validation;
+            formatter.print_gas_details(&gas_details, &fee_model_config);
 
-            let gas_spent_on_compute = bootloader_debug.gas_spent_on_execution
-                - bootloader_debug.gas_spent_on_bytecode_preparation;
-
-            let gas_used = intrinsic_gas
-                + gas_for_validation
-                + bootloader_debug.gas_spent_on_bytecode_preparation
-                + gas_spent_on_compute;
-
-            tracing::info!(
-                "Gas - Limit: {} | Used: {} | Refunded: {}",
-                to_human_size(total_gas_limit),
-                to_human_size(gas_used),
-                to_human_size(bootloader_debug.refund_by_operator)
-            );
-
-            if bootloader_debug.total_gas_limit_from_user != total_gas_limit {
-                tracing::info!(
-                    "{}",
-                    format!(
-                "  WARNING: user actually provided more gas {}, but system had a lower max limit.",
-                to_human_size(bootloader_debug.total_gas_limit_from_user)
-            )
-                    .yellow()
-                );
-            }
-            if bootloader_debug.refund_computed != bootloader_debug.refund_by_operator {
-                tracing::info!(
-                    "{}",
-                    format!(
-                        "  WARNING: Refund by VM: {}, but operator refunded more: {}",
-                        to_human_size(bootloader_debug.refund_computed),
-                        to_human_size(bootloader_debug.refund_by_operator)
-                    )
-                    .yellow()
-                );
-            }
-
-            if bootloader_debug.refund_computed + gas_used != total_gas_limit {
-                tracing::info!(
-                    "{}",
-                    format!(
-                        "  WARNING: Gas totals don't match. {} != {} , delta: {}",
-                        to_human_size(bootloader_debug.refund_computed + gas_used),
-                        to_human_size(total_gas_limit),
-                        to_human_size(
-                            total_gas_limit.abs_diff(bootloader_debug.refund_computed + gas_used)
-                        )
-                    )
-                    .yellow()
-                );
-            }
-
-            let bytes_published = spent_on_pubdata / bootloader_debug.gas_per_pubdata.as_u64();
-
-            tracing::info!(
-                "During execution published {} bytes to L1, @{} each - in total {} gas",
-                to_human_size(bytes_published.into()),
-                to_human_size(bootloader_debug.gas_per_pubdata),
-                to_human_size(spent_on_pubdata.into())
-            );
-
-            tracing::info!("Out of {} gas used, we spent:", to_human_size(gas_used));
-            tracing::info!(
-                "  {:>15} gas ({:>2}%) for transaction setup",
-                to_human_size(intrinsic_gas),
-                to_human_size(intrinsic_gas * 100 / gas_used)
-            );
-            tracing::info!(
-                "  {:>15} gas ({:>2}%) for bytecode preparation (decompression etc)",
-                to_human_size(bootloader_debug.gas_spent_on_bytecode_preparation),
-                to_human_size(bootloader_debug.gas_spent_on_bytecode_preparation * 100 / gas_used)
-            );
-            tracing::info!(
-                "  {:>15} gas ({:>2}%) for account validation",
-                to_human_size(gas_for_validation),
-                to_human_size(gas_for_validation * 100 / gas_used)
-            );
-            tracing::info!(
-                "  {:>15} gas ({:>2}%) for computations (opcodes)",
-                to_human_size(gas_spent_on_compute),
-                to_human_size(gas_spent_on_compute * 100 / gas_used)
-            );
-
-            tracing::info!("");
-            tracing::info!("");
-            tracing::info!(
-                "{}",
-                "=== Transaction setup cost breakdown ===".to_owned().bold(),
-            );
-
-            tracing::info!("Total cost: {}", to_human_size(intrinsic_gas).bold());
-            tracing::info!(
-                "  {:>15} gas ({:>2}%) fixed cost",
-                to_human_size(bootloader_debug.intrinsic_overhead),
-                to_human_size(bootloader_debug.intrinsic_overhead * 100 / intrinsic_gas)
-            );
-            tracing::info!(
-                "  {:>15} gas ({:>2}%) operator cost",
-                to_human_size(bootloader_debug.operator_overhead),
-                to_human_size(bootloader_debug.operator_overhead * 100 / intrinsic_gas)
-            );
-
-            tracing::info!("");
-            tracing::info!(
-                "  FYI: operator could have charged up to: {}, so you got {}% discount",
-                to_human_size(bootloader_debug.required_overhead),
-                to_human_size(
-                    (bootloader_debug.required_overhead - bootloader_debug.operator_overhead) * 100
-                        / bootloader_debug.required_overhead
-                )
-            );
-
-            {
-                let fee_model_config = self
-                    .inner
-                    .read()
-                    .expect("Failed to acquire reading lock")
-                    .fee_input_provider
-                    .get_fee_model_config();
-                tracing::info!(
-                    "Publishing full block costs the operator around {} l2 gas",
-                    to_human_size(
-                        bootloader_debug.gas_per_pubdata * fee_model_config.batch_overhead_l1_gas
-                    ),
-                );
-            }
-            tracing::info!("Your transaction has contributed to filling up the block in the following way (we take the max contribution as the cost):");
-            tracing::info!(
-                "  Length overhead:  {:>15}",
-                to_human_size(bootloader_debug.overhead_for_length)
-            );
-            tracing::info!(
-                "  Slot overhead:    {:>15}",
-                to_human_size(bootloader_debug.overhead_for_slot)
-            );
-            tracing::info!("Also, with every spent gas unit you potentially can pay some additional amount of gas for filling up the block by execution limits");
-            tracing::info!(
-                "This overhead is included in the gas price, although now it's set to zero"
-            );
-            tracing::info!("And with every pubdata byte, you potentially can pay an additional amount of gas for filling up the block by pubdata limit");
-            tracing::info!("This overhead is included in the `gas_per_pubdata` price");
             Ok(())
         } else {
-            Err("Booloader tracer didn't finish.".to_owned())
+            Err("Bootloader tracer didn't finish.".to_owned())
         }
     }
 
@@ -1574,91 +1440,77 @@ impl<S: ForkSource + std::fmt::Debug + Clone> InMemoryNode<S> {
         let spent_on_pubdata =
             tx_result.statistics.gas_used - tx_result.statistics.computational_gas_used as u64;
 
+        let status = match &tx_result.result {
+            ExecutionResult::Success { .. } => "SUCCESS",
+            ExecutionResult::Revert { .. } => "FAILED",
+            ExecutionResult::Halt { .. } => "HALTED",
+        };
+
+        // Print transaction summary
         if inner.config.show_tx_summary {
-            tracing::info!("┌─────────────────────────┐");
-            tracing::info!("│   TRANSACTION SUMMARY   │");
-            tracing::info!("└─────────────────────────┘");
-
-            match &tx_result.result {
-                ExecutionResult::Success { .. } => {
-                    tracing::info!("Transaction: {}", "SUCCESS".green())
-                }
-                ExecutionResult::Revert { .. } => tracing::info!("Transaction: {}", "FAILED".red()),
-                ExecutionResult::Halt { .. } => tracing::info!("Transaction: {}", "HALTED".red()),
-            }
-
-            tracing::info!("Initiator: {:?}", tx.initiator_account());
-            tracing::info!("Payer: {:?}", tx.payer());
-            tracing::info!(
-                "Gas - Limit: {} | Used: {} | Refunded: {}",
-                to_human_size(tx.gas_limit()),
-                to_human_size(tx.gas_limit() - tx_result.refunds.gas_refunded),
-                to_human_size(tx_result.refunds.gas_refunded.into())
+            tracing::info!("");
+            formatter::print_transaction_summary(
+                inner.config.get_l2_gas_price(),
+                &tx,
+                &tx_result,
+                status,
             );
+            tracing::info!("");
         }
-
+        // Print gas details if enabled
         if inner.config.show_gas_details != ShowGasDetails::None {
-            let info =
-                self.display_detailed_gas_info(bootloader_debug_result.get(), spent_on_pubdata);
-            if info.is_err() {
-                tracing::info!(
-                    "{}\nError: {}",
-                    "!!! FAILED TO GET DETAILED GAS INFO !!!".to_owned().red(),
-                    info.unwrap_err()
-                );
-            }
+            self.display_detailed_gas_info(bootloader_debug_result.get(), spent_on_pubdata)
+                .unwrap_or_else(|err| {
+                    tracing::error!("{}", format!("Cannot display gas details: {err}").on_red());
+                });
         }
-
+        // Print storage logs if enabled
         if inner.config.show_storage_logs != ShowStorageLogs::None {
             print_storage_logs_details(&inner.config.show_storage_logs, &tx_result);
         }
-
+        // Print VM details if enabled
         if inner.config.show_vm_details != ShowVMDetails::None {
-            formatter::print_vm_details(&tx_result);
+            let mut formatter = formatter::Formatter::new();
+            formatter.print_vm_details(&tx_result);
         }
 
         if !inner.config.disable_console_log {
-            tracing::info!("");
-            tracing::info!("==== Console logs: ");
-
-            for call in call_traces {
-                inner.console_log_handler.handle_call_recursive(call);
-            }
+            inner
+                .console_log_handler
+                .handle_calls_recursive(call_traces);
         }
 
         if inner.config.show_calls != ShowCalls::None {
             tracing::info!("");
-            let call_traces_count = if !call_traces.is_empty() {
-                // All calls/sub-calls are stored within the first call trace
-                call_traces[0].calls.len()
-            } else {
-                0
-            };
             tracing::info!(
-                "==== {}",
-                format!("{:?} call traces. ", call_traces_count).bold()
+                "[Transaction Execution] ({} calls)",
+                call_traces[0].calls.len()
             );
-
-            for call in call_traces {
-                formatter::print_call(
+            let num_calls = call_traces.len();
+            for (i, call) in call_traces.iter().enumerate() {
+                let is_last_sibling = i == num_calls - 1;
+                let mut formatter = formatter::Formatter::new();
+                formatter.print_call(
+                    tx.initiator_account(),
+                    tx.execute.contract_address,
                     call,
-                    0,
+                    is_last_sibling,
                     &inner.config.show_calls,
                     inner.config.show_outputs,
                     inner.config.resolve_hashes,
                 );
             }
         }
-
+        // Print event logs if enabled
         if inner.config.show_event_logs {
             tracing::info!("");
-            tracing::info!(
-                "==== {}",
-                format!("{} events", tx_result.logs.events.len()).bold()
-            );
-            for event in &tx_result.logs.events {
-                formatter::print_event(event, inner.config.resolve_hashes);
+            tracing::info!("[Events] ({} events)", tx_result.logs.events.len());
+            for (i, event) in tx_result.logs.events.iter().enumerate() {
+                let is_last = i == tx_result.logs.events.len() - 1;
+                let mut formatter = formatter::Formatter::new();
+                formatter.print_event(event, inner.config.resolve_hashes, is_last);
             }
+            tracing::info!("");
         }
 
         let mut bytecodes = HashMap::new();
