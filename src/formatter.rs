@@ -416,7 +416,6 @@ impl Formatter {
         );
     }
     /// Prints the call stack of either the system or user calls in a structured log.
-    // Refactored print_call method
     #[allow(clippy::too_many_arguments)]
     pub fn print_call(
         &mut self,
@@ -526,7 +525,6 @@ impl Formatter {
             }
         }
     }
-
     /// Prints the storage logs of the system in a structured log.
     pub fn print_storage_logs(
         &mut self,
@@ -606,9 +604,8 @@ impl Formatter {
             }
         });
     }
-
-    /// Prints structured error message with insights.
-    #[allow(clippy::too_many_arguments)]
+    /// Prints structured error message.
+    /// TODO: we can incorporate suggested actions here (e.g. insights).
     #[allow(clippy::too_many_arguments)]
     pub fn print_structured_error(
         &mut self,
@@ -617,7 +614,7 @@ impl Formatter {
         call: &Call,
         is_last_sibling: bool,
         error_flag: &ErrorFlags,
-        _tx_result: &VmExecutionStatistics,
+        _tx_result: &VmExecutionStatistics, // TODO: we can use this to provide more insights
         output: &ExecutionOutput,
         tx: &Transaction,
     ) {
@@ -640,7 +637,6 @@ impl Formatter {
         }
     }
 }
-
 // Builds the branched prefix for the structured logs.
 fn build_prefix(sibling_stack: &[bool], is_last_sibling: bool) -> String {
     let mut prefix = String::new();
@@ -664,7 +660,6 @@ fn build_prefix(sibling_stack: &[bool], is_last_sibling: bool) -> String {
 /// Finds the last call containing an error or revert reason in the call stack.
 fn find_last_error_call(call: &Call) -> Option<&Call> {
     let mut last_error_call = None;
-    // If the current call contains an error or revert reason, mark it as the last seen
     if call.revert_reason.is_some() || call.error.is_some() {
         last_error_call = Some(call);
     }
@@ -783,7 +778,6 @@ fn format_data(value: &[u8]) -> String {
     }
 }
 
-// Helper function to format call information
 fn format_call_info(
     initiator: Address,
     contract_address: Option<H160>,
@@ -839,7 +833,6 @@ fn format_call_info(
     (line, function_signature, contract_type)
 }
 
-// Helper function to handle error formatting
 fn format_call_errors(
     call_section: &mut Formatter,
     call: &Call,
@@ -1005,7 +998,6 @@ fn get_error_function_name(func_selector_hex: String, contract_type: ContractTyp
 }
 // Helper function to extract function selector from the reason string
 fn extract_function_selector_from_reason(reason: &str) -> Option<String> {
-    // The reason string contains something like "Error function_selector = 0x03eb8b54, data = 0x..."
     let pattern = "Error function_selector = 0x";
     if let Some(start) = reason.find(pattern) {
         let selector_start = start + pattern.len();
@@ -1016,7 +1008,6 @@ fn extract_function_selector_from_reason(reason: &str) -> Option<String> {
             .unwrap_or(reason.len());
         if selector_end > selector_start {
             let func_selector_hex = &reason[selector_start..selector_end];
-            // Validate that the extracted string is valid hex and of correct length
             if func_selector_hex.len() == 8
                 && func_selector_hex.chars().all(|c| c.is_ascii_hexdigit())
             {

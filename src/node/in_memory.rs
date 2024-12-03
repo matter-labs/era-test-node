@@ -678,7 +678,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
 
                 let message = reason.to_string();
                 let pretty_message = format!(
-                    "execution reverted!!   {}{}",
+                    "execution reverted{}{}",
                     if message.is_empty() { "" } else { ": " },
                     message
                 );
@@ -798,7 +798,7 @@ impl<S: std::fmt::Debug + ForkSource> InMemoryNodeInner<S> {
             }
             .into_tracer_pointer(),
         ];
-        // Ask if vm.inspect is the same as vm.execute
+        // TODO: Ask if vm.inspect is the same as vm.execute
         let tx_result = vm.inspect(&mut tracers.into(), InspectExecutionMode::OneTx);
 
         let call_traces = Arc::try_unwrap(call_tracer_result)
