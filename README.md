@@ -1,11 +1,12 @@
-<div align="center">
-<a href="https://era.zksync.io/docs/tools/testing/era-test-node.html">
+# 🚀 VERSION FOR ZK-OS - in development 🚀
 
-![era-test-node](./.github/assets/era_test_node_banner_light.png#gh-light-mode-only)
-![era-test-node](./.github/assets/era_test_node_banner_dark.png#gh-dark-mode-only)
-</a>
 
-  </div>
+
+**WARNING**
+
+This branch is under development - for zkos purposes.
+
+
 
 # 🚀 zkSync Era In-Memory Node 🚀
 
