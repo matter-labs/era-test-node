@@ -3,9 +3,9 @@ use crate::bootloader_debug::BootloaderDebug;
 use crate::fork::block_on;
 use crate::utils::{calculate_eth_cost, format_gwei, to_human_size};
 use crate::{config::show_details::ShowCalls, resolver};
-
 use colored::Colorize;
 use futures::future::join_all;
+use hex::encode;
 use lazy_static::lazy_static;
 use serde::Deserialize;
 use std::{collections::HashMap, str};
@@ -868,7 +868,7 @@ fn format_call_errors(
             call_section.format_error(true, &format!("🔴 Error: {}", error));
         }
         if let Some(output) = output {
-            call_section.format_error(true, &format!("🔴 Error output: {:?}", output));
+            format_execution_output(call_section, output);
         }
         if let Some(error_flag) = error_flag {
             if error_flag != &ErrorFlags::empty() {
@@ -886,6 +886,82 @@ fn format_call_errors(
                     summary_section.format_log(true, &detail);
                 }
             });
+        }
+    }
+}
+fn format_execution_output(call_section: &mut Formatter, output: &ExecutionOutput) {
+    match output {
+        ExecutionOutput::RevertReason(reason) => call_section.format_error(
+            true,
+            &format!("🔴 Error output: {}", format_revert_reason(reason)),
+        ),
+        ExecutionOutput::HaltReason(halt_reason) => call_section.format_error(
+            true,
+            &format!("🔴 Error output: {}", format_halt_reason(halt_reason)),
+        ),
+    }
+}
+fn format_revert_reason(reason: &VmRevertReason) -> String {
+    match reason {
+        VmRevertReason::General { msg, data } => {
+            let hex_data = encode(data);
+            format!(
+                "RevertReason(General {{ msg: \"{}\", data: 0x{} }})",
+                msg, hex_data
+            )
+        }
+        VmRevertReason::Unknown {
+            function_selector,
+            data,
+        } => {
+            let func_selector_hex = encode(function_selector);
+            let hex_data = encode(data);
+            format!(
+                "RevertReason(Unknown {{ function_selector: 0x{}, data: 0x{} }})",
+                func_selector_hex, hex_data
+            )
+        }
+        VmRevertReason::InnerTxError => "RevertReason(InnerTxError)".to_string(),
+        VmRevertReason::VmError => "RevertReason(VmError)".to_string(),
+        &_ => "RevertReason(Unknown)".to_string(),
+    }
+}
+fn format_halt_reason(halt: &Halt) -> String {
+    match halt {
+        // Group all Halt variants that use VmRevertReason
+        Halt::ValidationFailed(reason)
+        | Halt::PaymasterValidationFailed(reason)
+        | Halt::PrePaymasterPreparationFailed(reason)
+        | Halt::PayForTxFailed(reason)
+        | Halt::FailedToMarkFactoryDependencies(reason)
+        | Halt::FailedToChargeFee(reason)
+        | Halt::Unknown(reason) => {
+            format!("Halt({})", format_revert_reason(reason))
+        }
+        // Handle non-VmRevertReason variants individually
+        Halt::FromIsNotAnAccount => "Halt(FromIsNotAnAccount)".to_string(),
+        Halt::InnerTxError => "Halt(InnerTxError)".to_string(),
+        Halt::UnexpectedVMBehavior(msg) => {
+            format!("Halt(UnexpectedVMBehavior {{ msg: \"{}\" }})", msg)
+        }
+        Halt::BootloaderOutOfGas => "Halt(BootloaderOutOfGas)".to_string(),
+        Halt::ValidationOutOfGas => "Halt(ValidationOutOfGas)".to_string(),
+        Halt::TooBigGasLimit => "Halt(TooBigGasLimit)".to_string(),
+        Halt::NotEnoughGasProvided => "Halt(NotEnoughGasProvided)".to_string(),
+        Halt::MissingInvocationLimitReached => "Halt(MissingInvocationLimitReached)".to_string(),
+        Halt::FailedToSetL2Block(msg) => {
+            format!("Halt(FailedToSetL2Block {{ msg: \"{}\" }})", msg)
+        }
+        Halt::FailedToAppendTransactionToL2Block(msg) => {
+            format!(
+                "Halt(FailedToAppendTransactionToL2Block {{ msg: \"{}\" }})",
+                msg
+            )
+        }
+        Halt::VMPanic => "Halt(VMPanic)".to_string(),
+        Halt::TracerCustom(msg) => format!("Halt(TracerCustom {{ msg: \"{}\" }})", msg),
+        Halt::FailedToPublishCompressedBytecodes => {
+            "Halt(FailedToPublishCompressedBytecodes)".to_string()
         }
     }
 }
@@ -948,9 +1024,12 @@ fn format_transaction_error_summary(
                 details.push(format!(
                     "{} {}",
                     "Paymaster Input Params:".bold().red(),
-                    format!("{:?}", data.paymaster_params.paymaster_input)
-                        .dimmed()
-                        .red()
+                    format!(
+                        "{:?}",
+                        encode(data.paymaster_params.paymaster_input.clone())
+                    )
+                    .dimmed()
+                    .red()
                 ));
             }
 
