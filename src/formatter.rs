@@ -928,7 +928,6 @@ fn format_revert_reason(reason: &VmRevertReason) -> String {
 }
 fn format_halt_reason(halt: &Halt) -> String {
     match halt {
-        // Group all Halt variants that use VmRevertReason
         Halt::ValidationFailed(reason)
         | Halt::PaymasterValidationFailed(reason)
         | Halt::PrePaymasterPreparationFailed(reason)
@@ -938,7 +937,6 @@ fn format_halt_reason(halt: &Halt) -> String {
         | Halt::Unknown(reason) => {
             format!("Halt({})", format_revert_reason(reason))
         }
-        // Handle non-VmRevertReason variants individually
         Halt::FromIsNotAnAccount => "Halt(FromIsNotAnAccount)".to_string(),
         Halt::InnerTxError => "Halt(InnerTxError)".to_string(),
         Halt::UnexpectedVMBehavior(msg) => {
