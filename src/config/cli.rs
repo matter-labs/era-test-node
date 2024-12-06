@@ -51,7 +51,7 @@ pub struct Cli {
         long,
         value_name = "IP_ADDR",
         env = "ANVIL_ZKSYNC_IP_ADDR",
-        default_value = "127.0.0.1",
+        default_value = "0.0.0.0",
         value_delimiter = ',',
         help_heading = "Network Options"
     )]
@@ -396,7 +396,7 @@ mod tests {
     fn can_parse_host() {
         // Test adapted from https://github.com/foundry-rs/foundry/blob/398ef4a3d55d8dd769ce86cada5ec845e805188b/crates/anvil/src/cmd.rs#L895
         let args = Cli::parse_from(["era_test_node"]);
-        assert_eq!(args.host, vec![IpAddr::V4(Ipv4Addr::LOCALHOST)]);
+        assert_eq!(args.host, vec![IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))]);
 
         let args = Cli::parse_from([
             "era_test_node",
